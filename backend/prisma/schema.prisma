@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Asset {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  isin         String?
+  ticker       String?
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  type      String // "BUY" | "SELL"
+  quantity  Float
+  price     Float // prezzo unitario
+  fees      Float    @default(0)
+  date      DateTime
+  createdAt DateTime @default(now())
+
+  @@index([assetId])
+  @@index([date])
+}
+
+model PriceHistory {
+  id    String   @id @default(uuid())
+  asset String // asset name
+  price Float
+  date  DateTime
+
+  @@unique([asset, date])
+  @@index([asset])
+}
