@@ -3,7 +3,7 @@ module.exports = {
         {
             name: "portfolio-backend",
             cwd: "./backend",
-            script: "dist/main.js",
+            script: "dist/src/main.js",
             env: {
                 NODE_ENV: "production",
             },
