@@ -87,6 +87,11 @@ export default function Home() {
     fetchHistoryForFilter(allAssets);
   };
 
+  const deselectAllAssets = () => {
+    setSelectedAssets([]);
+    fetchHistoryForFilter([]);
+  };
+
   useEffect(() => {
     if (token) {
       fetchData();
@@ -142,7 +147,7 @@ export default function Home() {
                   onClick={logout}
                   className="px-3 py-1.5 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/10 transition-colors"
                 >
-                  Esci
+                  Logout
                 </button>
                 <button
                   onClick={fetchData}
@@ -168,13 +173,13 @@ export default function Home() {
 
               {/* Chart + Filter */}
               <div className="space-y-3">
-                <PerformanceChart data={history} loading={loading || chartLoading} />
+                <PerformanceChart data={history} loading={loading || chartLoading} totalCost={summary?.totalCost} />
 
                 {/* ETF Filter Pills - Under Chart */}
                 {summary && summary.holdings.length > 0 && (
                   <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/30">
                     <div className="flex flex-wrap gap-2 items-center">
-                      <span className="text-xs text-slate-500 mr-2">Filtro:</span>
+                      <span className="text-xs text-slate-500 mr-2">Filter:</span>
                       {summary.holdings.map((holding) => {
                         const isSelected = selectedAssets.includes(holding.name);
                         const profitPercent = holding.profitLossPercent ?? 0;
@@ -200,12 +205,21 @@ export default function Home() {
                         );
                       })}
 
+                      {selectedAssets.length > 0 && (
+                        <button
+                          onClick={deselectAllAssets}
+                          className="px-2 py-1 rounded text-xs text-slate-400 hover:text-white transition-colors"
+                        >
+                          Deselect All
+                        </button>
+                      )}
+
                       {selectedAssets.length < (summary?.holdings.length ?? 0) && (
                         <button
                           onClick={selectAllAssets}
                           className="px-2 py-1 rounded text-xs text-slate-400 hover:text-white transition-colors"
                         >
-                          Mostra tutti
+                          Select All
                         </button>
                       )}
                     </div>

@@ -1,11 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine } from 'recharts';
 import { HistoryPoint } from '@/lib/api';
 
 interface PerformanceChartProps {
     data: HistoryPoint[];
     loading: boolean;
+    totalCost?: number;
 }
 
 interface EnhancedDataPoint extends HistoryPoint {
@@ -15,11 +17,16 @@ interface EnhancedDataPoint extends HistoryPoint {
     change?: number;
 }
 
-export default function PerformanceChart({ data, loading }: PerformanceChartProps) {
+export default function PerformanceChart({ data, loading, totalCost }: PerformanceChartProps) {
+    const [range, setRange] = useState<'1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL'>('ALL');
+
     if (loading) {
         return (
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700/50 shadow-xl h-80 animate-pulse">
-                <div className="h-4 bg-slate-700 rounded w-40 mb-4" />
+                <div className="flex justify-between mb-4">
+                    <div className="h-6 bg-slate-700 rounded w-48" />
+                    <div className="h-6 bg-slate-700 rounded w-32" />
+                </div>
                 <div className="h-full bg-slate-700/50 rounded-xl" />
             </div>
         );
@@ -33,6 +40,29 @@ export default function PerformanceChart({ data, loading }: PerformanceChartProp
         );
     }
 
+    // FILTER DATA BASED ON RANGE
+    const filteredData = data.filter(d => {
+        if (range === 'ALL') return true;
+
+        const date = new Date(d.date);
+        const now = new Date();
+        const start = new Date();
+
+        switch (range) {
+            case '1M': start.setMonth(now.getMonth() - 1); break;
+            case '3M': start.setMonth(now.getMonth() - 3); break;
+            case '6M': start.setMonth(now.getMonth() - 6); break;
+            case 'YTD': start.setMonth(0, 1); break; // Jan 1st of current year
+            case '1Y': start.setFullYear(now.getFullYear() - 1); break;
+        }
+
+        // Reset hours to compare dates properly
+        start.setHours(0, 0, 0, 0);
+        return date >= start;
+    });
+
+    const displayData = filteredData.length > 0 ? filteredData : data; // Fallback if filter returns empty
+
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr);
         return date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
@@ -42,22 +72,26 @@ export default function PerformanceChart({ data, loading }: PerformanceChartProp
         return `€${value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
 
-    // Calculate Y-axis domain with padding
-    const values = data.map(d => d.value);
+    // Calculate Y-axis domain with padding based on DISPLAY DATA
+    const values = displayData.map(d => d.value);
     const minValue = Math.min(...values);
     const maxValue = Math.max(...values);
-    const range = maxValue - minValue;
-    const padding = range < maxValue * 0.01 ? maxValue * 0.005 : range * 0.1;
+    const rangeVal = maxValue - minValue;
+    const padding = rangeVal < maxValue * 0.01 ? maxValue * 0.005 : rangeVal * 0.1;
     const yMin = Math.max(0, minValue - padding);
     const yMax = maxValue + padding;
 
-    // Determine overall trend
-    const firstValue = data[0]?.value || 0;
-    const lastValue = data[data.length - 1]?.value || 0;
-    const isOverallPositive = lastValue >= firstValue;
+    // Determine trend and baseline
+    const lastValue = displayData[displayData.length - 1]?.value || 0;
+
+    // If range is ALL and totalCost is provided, use totalCost as baseline for the header calculation
+    // Otherwise use the first value of the selected period
+    const baselineValue = (range === 'ALL' && totalCost !== undefined) ? totalCost : (displayData[0]?.value || 0);
+    const changeValue = lastValue - baselineValue;
+    const isOverallPositive = changeValue >= 0;
 
     // Enhance data with gain/loss for coloring
-    const enhancedData: EnhancedDataPoint[] = data.map((point, index) => {
+    const enhancedData: EnhancedDataPoint[] = displayData.map((point, index) => {
         if (index === 0) {
             return {
                 ...point,
@@ -66,7 +100,7 @@ export default function PerformanceChart({ data, loading }: PerformanceChartProp
                 change: 0
             };
         }
-        const prevValue = data[index - 1].value;
+        const prevValue = displayData[index - 1].value;
         const isUp = point.value >= prevValue;
         return {
             ...point,
@@ -83,16 +117,67 @@ export default function PerformanceChart({ data, loading }: PerformanceChartProp
 
     return (
         <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700/50 shadow-xl">
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                </svg>
-                Portfolio Performance
-                <span className={`ml-auto text-sm font-medium ${isOverallPositive ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {isOverallPositive ? '↑' : '↓'} {formatValue(lastValue - firstValue)}
-                    ({((lastValue - firstValue) / firstValue * 100).toFixed(2)}%)
-                </span>
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                        </svg>
+                        Portfolio Performance
+                    </h3>
+                    <p className={`text-sm font-medium mt-1 ${isOverallPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {isOverallPositive ? '↑' : '↓'} {formatValue(Math.abs(changeValue))}
+                        <span className="opacity-75 ml-1">
+                            ({baselineValue > 0 ? ((changeValue / baselineValue) * 100).toFixed(2) : '0.00'}%)
+                        </span>
+                    </p>
+                </div>
+
+                <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700/50">
+                    {(['1M', '3M', '6M', 'YTD', '1Y', 'ALL'] as const).map((r) => {
+                        let isDisabled = false;
+                        if (data.length > 0 && r !== 'ALL') {
+                            const firstHistoryDate = new Date(data[0].date);
+                            const now = new Date();
+                            const rangeStart = new Date();
+
+                            switch (r) {
+                                case '1M': rangeStart.setMonth(now.getMonth() - 1); break;
+                                case '3M': rangeStart.setMonth(now.getMonth() - 3); break;
+                                case '6M': rangeStart.setMonth(now.getMonth() - 6); break;
+                                case 'YTD': rangeStart.setMonth(0, 1); break; // Jan 1st of current year
+                                case '1Y': rangeStart.setFullYear(now.getFullYear() - 1); break;
+                            }
+
+                            // Reset hours for fair comparison
+                            rangeStart.setHours(0, 0, 0, 0);
+                            firstHistoryDate.setHours(0, 0, 0, 0);
+
+                            // If the range start is BEFORE the first data point, disable it
+                            // (Exception: YTD is usually always allowed unless data starts AFTER today, which shouldn't happen)
+                            if (rangeStart < firstHistoryDate) {
+                                isDisabled = true;
+                            }
+                        }
+
+                        return (
+                            <button
+                                key={r}
+                                onClick={() => !isDisabled && setRange(r)}
+                                disabled={isDisabled}
+                                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${range === r
+                                    ? 'bg-slate-600 text-white shadow-sm'
+                                    : isDisabled
+                                        ? 'text-slate-600 cursor-not-allowed'
+                                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                                    }`}
+                            >
+                                {r}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
 
             <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -114,6 +199,7 @@ export default function PerformanceChart({ data, loading }: PerformanceChartProp
                             fontSize={12}
                             tickLine={false}
                             axisLine={false}
+                            minTickGap={30}
                         />
                         <YAxis
                             tickFormatter={formatValue}
@@ -125,7 +211,7 @@ export default function PerformanceChart({ data, loading }: PerformanceChartProp
                             domain={[yMin, yMax]}
                             tickCount={5}
                         />
-                        <ReferenceLine y={firstValue} stroke="#64748b" strokeDasharray="3 3" />
+
                         <Tooltip
                             contentStyle={{
                                 backgroundColor: '#1e293b',
@@ -138,7 +224,7 @@ export default function PerformanceChart({ data, loading }: PerformanceChartProp
                                 const changeStr = point.change !== undefined && point.change !== 0
                                     ? ` (${point.change >= 0 ? '+' : ''}€${point.change.toFixed(2)})`
                                     : '';
-                                return [formatValue(value as number) + changeStr, 'Valore'];
+                                return [formatValue(value as number) + changeStr, 'Value'];
                             }}
                             labelFormatter={(label) => new Date(label).toLocaleDateString('it-IT', {
                                 day: '2-digit',
