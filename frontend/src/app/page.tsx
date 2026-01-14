@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getPortfolioSummary, getPortfolioHistory, getTransactions, PortfolioSummary, HistoryPoint, Transaction } from '@/lib/api';
-import { MOCK_SUMMARY, MOCK_HISTORY, MOCK_TRANSACTIONS } from '@/lib/demoData';
+import { MOCK_SUMMARY, MOCK_HISTORY, MOCK_ASSETS_HISTORY, MOCK_TRANSACTIONS } from '@/lib/demoData';
 import PortfolioCard from '@/components/PortfolioCard';
 import PerformanceChart from '@/components/PerformanceChart';
 import HoldingsTable from '@/components/HoldingsTable';
@@ -17,20 +17,19 @@ export default function Home() {
 
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [assetsHistory, setAssetsHistory] = useState<Record<string, HistoryPoint[]>>({});
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [range, setRange] = useState<'1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL'>('ALL');
+  const [viewRange, setViewRange] = useState<{ start: string; end: string } | null>(null);
 
   // Demo mode check
   const isDemo = !token;
 
   // Authentication check - REMOVED strictly forcing login
-  // We now allow access without token (Demo Mode)
-  useEffect(() => {
-    // Optional: Redirect to login if user explicitly logged out? 
-    // No, we want to show landing page.
-  }, []);
+  // ... (useEffect remains same)
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -44,6 +43,7 @@ export default function Home() {
         const assetNames = MOCK_SUMMARY.holdings.map(h => h.name);
         setSelectedAssets(assetNames);
         setHistory(MOCK_HISTORY);
+        setAssetsHistory(MOCK_ASSETS_HISTORY);
         setRecentTransactions(MOCK_TRANSACTIONS);
         setLoading(false);
       }, 800);
@@ -59,8 +59,9 @@ export default function Home() {
       setSelectedAssets(assetNames);
 
       // Fetch history for all assets
-      const historyData = await getPortfolioHistory();
-      setHistory(historyData);
+      const historyRes = await getPortfolioHistory();
+      setHistory(historyRes.portfolio);
+      setAssetsHistory(historyRes.assets);
 
       // Fetch last 5 transactions
       const txData = await getTransactions(5);
@@ -83,13 +84,19 @@ export default function Home() {
 
     setChartLoading(true);
     try {
-      const historyData = await getPortfolioHistory(assets);
-      setHistory(historyData);
+      const historyRes = await getPortfolioHistory(assets);
+      setHistory(historyRes.portfolio);
+      setAssetsHistory(historyRes.assets);
     } catch (error) {
       console.error('Failed to fetch history:', error);
     } finally {
       setChartLoading(false);
     }
+  }, []);
+
+  // Handle Chart View Change (Zoom or Range Filter)
+  const handleViewChange = useCallback((start: string, end: string) => {
+    setViewRange({ start, end });
   }, []);
 
   // Handle filter change
@@ -119,9 +126,8 @@ export default function Home() {
     fetchData();
   }, [fetchData]);
 
-  // Short name helper
   const getShortName = (name: string) => {
-    // Extract key words from ETF name
+    // ... (remains same) ...
     if (name.includes('S&P 500')) return 'S&P 500';
     if (name.includes('Overnight')) return 'EUR Overnight';
     if (name.includes('Stoxx Europe')) return 'Stoxx Europe 600';
@@ -131,94 +137,132 @@ export default function Home() {
     return name.substring(0, 15) + '...';
   };
 
+  // Calculate performance for a specific asset over the selected 'range'
+  const getAssetPerformance = (assetName: string, currentProfitPercent: number) => {
+    // If we don't have detailed history (e.g. demo mode or failed fetch), return current Total P/L
+    if (!assetsHistory || !assetsHistory[assetName]) return currentProfitPercent;
 
+    const assetHist = assetsHistory[assetName];
+    if (assetHist.length === 0) return currentProfitPercent;
+
+    // Use actual visible range from chart if available
+    let startPrice: number;
+    let endPrice: number;
+
+    if (viewRange) {
+      // Find exact points matching the view range
+      // Since dates are strings YYYY-MM-DD
+      const startPoint = assetHist.find(p => p.date >= viewRange.start);
+      const endPoint = assetHist.find(p => p.date <= viewRange.end) || assetHist[assetHist.length - 1]; // Fallback to last point if max range
+
+      // Actually we want the price AT the end of the range
+      // Find last point <= viewRange.end
+      // We iterate backwards or just find
+      let foundEnd = assetHist[assetHist.length - 1];
+      for (let i = assetHist.length - 1; i >= 0; i--) {
+        if (assetHist[i].date <= viewRange.end) {
+          foundEnd = assetHist[i];
+          break;
+        }
+      }
+
+      if (!startPoint) return currentProfitPercent;
+      startPrice = startPoint.value;
+      endPrice = foundEnd.value;
+    } else {
+      // Fallback to old logic if viewRange not yet ready
+      // Find start date based on range
+      endPrice = assetHist[assetHist.length - 1].value;
+      const now = new Date();
+      let startDate = new Date();
+
+      switch (range) {
+        case '1M': startDate.setMonth(now.getMonth() - 1); break;
+        case '3M': startDate.setMonth(now.getMonth() - 3); break;
+        case '6M': startDate.setMonth(now.getMonth() - 6); break;
+        case 'YTD': startDate.setMonth(0, 1); break; // Jan 1st
+        case '1Y': startDate.setFullYear(now.getFullYear() - 1); break;
+        case 'ALL': return currentProfitPercent; // For ALL, we usually default to Total Return since Inception
+      }
+
+      startDate.setHours(0, 0, 0, 0);
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const startPoint = assetHist.find(p => p.date >= startDateStr);
+
+      if (!startPoint) return currentProfitPercent;
+      startPrice = startPoint.value;
+    }
+
+    return ((endPrice - startPrice) / startPrice) * 100;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Background Effects */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 right-1/3 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl" />
-      </div>
-
-      {/* Content */}
+      {/* ... */}
       <div className="relative z-10">
-        {/* Header */}
         <header className="border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
+            <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-blue-600 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-blue-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-white">ETF Portfolio Tracker</h1>
-                  <p className="text-slate-500 text-sm">Track your investments</p>
+                  <h1 className="text-xl font-bold text-white">Portfolio</h1>
+                  <p className="text-xs text-slate-500 font-medium">ETF TRACKER</p>
                 </div>
               </div>
-
               <div className="flex items-center gap-4">
-                {isDemo ? (
-                  <>
+                {isAuthenticated && (
+                  <span className="text-sm text-gray-400 hidden sm:block">{user?.email}</span>
+                )}
+                {isAuthenticated ? (
+                  <button
+                    onClick={logout}
+                    className="px-3 py-1.5 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/10 transition-colors"
+                  >
+                    Logout
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3">
                     <button
                       onClick={() => router.push('/login')}
-                      className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
+                      className="text-slate-300 hover:text-white text-sm font-medium transition-colors"
                     >
                       Login
                     </button>
                     <button
                       onClick={() => router.push('/register')}
-                      className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:shadow-lg hover:shadow-emerald-500/20 transition-all"
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-600/20"
                     >
                       Sign Up
                     </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-sm text-gray-400 hidden sm:block">{user?.email}</span>
-
-                    <button
-                      onClick={logout}
-                      className="px-3 py-1.5 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/10 transition-colors"
-                    >
-                      Logout
-                    </button>
-                    <button
-                      onClick={fetchData}
-                      disabled={loading}
-                      className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-2 text-sm"
-                    >
-                      <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      Refresh
-                    </button>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
           </div>
         </header>
-
-        {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Column */}
             <div className="lg:col-span-2 space-y-6">
               <PortfolioCard summary={summary} loading={loading} />
 
               {/* Chart + Filter */}
               <div className="space-y-3">
                 <PerformanceChart
+                  key={token ? 'auth' : 'demo'}
                   data={history}
                   loading={loading || chartLoading}
                   totalCost={summary?.holdings
                     .filter(h => selectedAssets.includes(h.name))
                     .reduce((sum, h) => sum + h.totalCost, 0)
                   }
+                  range={range}
+                  onRangeChange={setRange}
+                  onViewChange={handleViewChange}
                 />
 
                 {/* ETF Filter Pills - Under Chart */}
@@ -228,7 +272,8 @@ export default function Home() {
                       <span className="text-xs text-slate-500 mr-2">Filter:</span>
                       {summary.holdings.map((holding) => {
                         const isSelected = selectedAssets.includes(holding.name);
-                        const profitPercent = holding.profitLossPercent ?? 0;
+                        // Calculate percentage based on selected range if available, else total P/L
+                        const profitPercent = getAssetPerformance(holding.name, holding.profitLossPercent ?? 0);
 
                         return (
                           <button
@@ -290,34 +335,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Quick Stats */}
-              <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700/50 shadow-xl">
-                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  Quick Stats
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
-                    <span className="text-slate-400 text-sm">ETF Totali</span>
-                    <span className="text-white font-medium">{summary?.holdings.length ?? 0}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
-                    <span className="text-slate-400 text-sm">Nel Grafico</span>
-                    <span className="text-white font-medium">{selectedAssets.length}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
-                    <span className="text-slate-400 text-sm">Punti Dati</span>
-                    <span className="text-white font-medium">{history.length}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-slate-400 text-sm">Ultimo Agg.</span>
-                    <span className="text-white font-medium">{loading ? '-' : 'Ora'}</span>
-                  </div>
-                </div>
-              </div>
-
               {/* Recent Transactions Widget */}
               <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700/50 shadow-xl">
                 <div className="flex justify-between items-center mb-4">
@@ -353,6 +370,34 @@ export default function Home() {
                   {recentTransactions.length === 0 && (
                     <div className="text-center text-slate-500 text-sm py-4">No transactions yet.</div>
                   )}
+                </div>
+              </div>
+
+              {/* Quick Stats */}
+              <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700/50 shadow-xl">
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Quick Stats
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
+                    <span className="text-slate-400 text-sm">ETF Totali</span>
+                    <span className="text-white font-medium">{summary?.holdings.length ?? 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
+                    <span className="text-slate-400 text-sm">Nel Grafico</span>
+                    <span className="text-white font-medium">{selectedAssets.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
+                    <span className="text-slate-400 text-sm">Punti Dati</span>
+                    <span className="text-white font-medium">{history.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-slate-400 text-sm">Ultimo Agg.</span>
+                    <span className="text-white font-medium">{loading ? '-' : 'Ora'}</span>
+                  </div>
                 </div>
               </div>
             </div>

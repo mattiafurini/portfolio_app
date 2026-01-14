@@ -1,13 +1,16 @@
 'use client';
 
-import { useState } from 'react';
-import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine } from 'recharts';
+import { useState, useEffect, useMemo } from 'react';
+import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceArea } from 'recharts';
 import { HistoryPoint } from '@/lib/api';
 
 interface PerformanceChartProps {
     data: HistoryPoint[];
     loading: boolean;
     totalCost?: number;
+    range?: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
+    onRangeChange?: (range: '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL') => void;
+    onViewChange?: (start: string, end: string) => void;
 }
 
 interface EnhancedDataPoint extends HistoryPoint {
@@ -17,8 +20,162 @@ interface EnhancedDataPoint extends HistoryPoint {
     change?: number;
 }
 
-export default function PerformanceChart({ data, loading, totalCost }: PerformanceChartProps) {
-    const [range, setRange] = useState<'1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL'>('ALL');
+export default function PerformanceChart({ data, loading, totalCost, range: propRange, onRangeChange, onViewChange }: PerformanceChartProps) {
+    const [internalRange, setInternalRange] = useState<'1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL'>('ALL');
+    const [interval, setInterval] = useState<'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'>('WEEKLY');
+
+    // Use prop if available, otherwise internal state
+    const range = propRange || internalRange;
+
+    const [refAreaLeft, setRefAreaLeft] = useState<string | null>(null);
+    const [refAreaRight, setRefAreaRight] = useState<string | null>(null);
+    const [left, setLeft] = useState<string | 'dataMin'>('dataMin');
+    const [right, setRight] = useState<string | 'dataMax'>('dataMax');
+    const [isZoomed, setIsZoomed] = useState(false);
+
+    // Calculate history duration in days
+    const historyDurationDays = data.length > 1
+        ? (new Date(data[data.length - 1].date).getTime() - new Date(data[0].date).getTime()) / (1000 * 3600 * 24)
+        : 0;
+
+    // Update interval default when range changes
+    // This provides a good default but allows user override
+    const handleRangeChange = (newRange: typeof range) => {
+        if (onRangeChange) {
+            onRangeChange(newRange);
+        } else {
+            setInternalRange(newRange);
+        }
+
+        const isLongRange = ['3M', '6M', 'YTD', '1Y'].includes(newRange) || (newRange === 'ALL' && historyDurationDays > 30);
+
+        // If switching to a long range
+        // and current interval is DAILY, switch to WEEKLY
+        if (isLongRange) {
+            if (interval === 'DAILY') {
+                setInterval('WEEKLY');
+            }
+            // Do not force change if already on WEEKLY or MONTHLY
+        } else if (newRange === '1M' || (newRange === 'ALL' && historyDurationDays <= 30)) {
+            // For short ranges, always allow/default to DAILY
+            if (interval !== 'DAILY') setInterval('DAILY');
+        }
+    };
+
+    // Map API ranges to Display labels
+    const rangeLabels: Record<string, string> = {
+        '1M': '1M',
+        '3M': '3M',
+        '6M': '6M',
+        'YTD': 'YTD',
+        '1Y': '1Y',
+        'ALL': 'ALL'
+    };
+
+    // FILTER DATA BASED ON RANGE
+    const filteredData = useMemo(() => {
+        if (!data) return [];
+        return data.filter(d => {
+            if (range === 'ALL') return true;
+
+            const date = new Date(d.date);
+            const now = new Date();
+            const start = new Date();
+
+            switch (range) {
+                case '1M': start.setMonth(now.getMonth() - 1); break;
+                case '3M': start.setMonth(now.getMonth() - 3); break;
+                case '6M': start.setMonth(now.getMonth() - 6); break;
+                case 'YTD': start.setMonth(0, 1); break; // Jan 1st of current year
+                case '1Y': start.setFullYear(now.getFullYear() - 1); break;
+            }
+
+            // Reset hours to compare dates properly
+            start.setHours(0, 0, 0, 0);
+            return date >= start;
+        });
+    }, [data, range]);
+
+    // Zoom Logic Helper
+    // const getAxisYDomain = ... (commented out) ...
+
+    const zoom = () => {
+        if (refAreaLeft === refAreaRight || refAreaRight === null || refAreaLeft === null) {
+            setRefAreaLeft(null);
+            setRefAreaRight(null);
+            return;
+        }
+
+        // Ensure left is smaller than right for domain
+        let leftLabel = refAreaLeft;
+        let rightLabel = refAreaRight;
+
+        // Find indices in filteredData to sort correctly if dragging backwards
+        const leftIndex = filteredData.findIndex(d => d.date === refAreaLeft);
+        const rightIndex = filteredData.findIndex(d => d.date === refAreaRight);
+
+        if (leftIndex > rightIndex) {
+            [leftLabel, rightLabel] = [refAreaRight, refAreaLeft];
+        }
+
+        setRefAreaLeft(null);
+        setRefAreaRight(null);
+        setLeft(leftLabel);
+        setRight(rightLabel);
+        setIsZoomed(true);
+    };
+
+    const zoomOut = () => {
+        setLeft('dataMin');
+        setRight('dataMax');
+        setIsZoomed(false);
+        setRefAreaLeft(null);
+        setRefAreaRight(null);
+    };
+
+    // Calculate display data
+    // If zoomed: show all points in the zoomed range
+    // Always apply interval sampling unless interval is DAILY
+    const displayData = useMemo(() => {
+        if (!filteredData || filteredData.length === 0) return [];
+
+        // First filter by zoom window if applied
+        let initialSet = filteredData;
+        if (isZoomed && left !== 'dataMin' && right !== 'dataMax') {
+            const startIndex = filteredData.findIndex(d => d.date === left);
+            const endIndex = filteredData.findIndex(d => d.date === right);
+            if (startIndex !== -1 && endIndex !== -1) {
+                initialSet = filteredData.slice(
+                    Math.min(startIndex, endIndex),
+                    Math.max(startIndex, endIndex) + 1
+                );
+            }
+        }
+
+        // Apply sampling ALWAYS (respect user choice)
+        if (initialSet.length > 0) {
+            return initialSet.filter((d, index, array) => {
+                if (index === array.length - 1) return true;
+                switch (interval) {
+                    case 'MONTHLY': return index % 30 === 0;
+                    case 'BIWEEKLY': return index % 14 === 0;
+                    case 'WEEKLY': return index % 7 === 0;
+                    default: return true;
+                }
+            });
+        }
+
+        return initialSet.length > 0 ? initialSet : (data || []);
+    }, [filteredData, isZoomed, left, right, interval, data]);
+
+    // Notify parent of view change
+    useEffect(() => {
+        if (onViewChange && displayData.length > 0) {
+            const start = displayData[0].date;
+            const end = displayData[displayData.length - 1].date;
+            onViewChange(start, end);
+        }
+    }, [displayData, onViewChange]);
 
     if (loading) {
         return (
@@ -40,61 +197,13 @@ export default function PerformanceChart({ data, loading, totalCost }: Performan
         );
     }
 
-    // FILTER DATA BASED ON RANGE
-    const filteredData = data.filter(d => {
-        if (range === 'ALL') return true;
-
-        const date = new Date(d.date);
-        const now = new Date();
-        const start = new Date();
-
-        switch (range) {
-            case '1M': start.setMonth(now.getMonth() - 1); break;
-            case '3M': start.setMonth(now.getMonth() - 3); break;
-            case '6M': start.setMonth(now.getMonth() - 6); break;
-            case 'YTD': start.setMonth(0, 1); break; // Jan 1st of current year
-            case '1Y': start.setFullYear(now.getFullYear() - 1); break;
-        }
-
-        // Reset hours to compare dates properly
-        start.setHours(0, 0, 0, 0);
-        return date >= start;
-    });
-
-    // SAMPLING LOGIC (Reduce density of points based on range)
-    const displayData = filteredData.length > 0 ? filteredData.filter((d, index, array) => {
-        const date = new Date(d.date);
-
-        switch (range) {
-            case '1Y':
-            case '6M':
-            case 'ALL':
-                // One point per month (approx every 30 days)
-                // Always keep the last point
-                if (index === array.length - 1) return true;
-                return index % 30 === 0;
-
-            case '3M':
-                // One point every 2 weeks (14 days)
-                if (index === array.length - 1) return true;
-                return index % 14 === 0;
-
-            case '1M':
-                // Daily data (keep all)
-                return true;
-
-            default:
-                return true;
-        }
-    }) : data;
-
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr);
-        return date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+        return date.toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
     };
 
     const formatValue = (value: number) => {
-        return `€${value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        return `€${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
 
     // Calculate Y-axis domain with padding based on DISPLAY DATA
@@ -109,9 +218,12 @@ export default function PerformanceChart({ data, loading, totalCost }: Performan
     // Determine trend and baseline
     const lastValue = displayData[displayData.length - 1]?.value || 0;
 
-    // If range is ALL and totalCost is provided, use totalCost as baseline for the header calculation
-    // Otherwise use the first value of the selected period
-    const baselineValue = (range === 'ALL' && totalCost !== undefined) ? totalCost : (displayData[0]?.value || 0);
+    // If zoomed, always use start of zoomed period as baseline
+    // If range is ALL and NOT zoomed, use totalCost (lifetime performance)
+    // Otherwise use start of displayed period
+    const baselineValue = (range === 'ALL' && totalCost !== undefined && !isZoomed)
+        ? totalCost
+        : (displayData[0]?.value || 0);
     const changeValue = lastValue - baselineValue;
     const isOverallPositive = changeValue >= 0;
 
@@ -158,55 +270,110 @@ export default function PerformanceChart({ data, loading, totalCost }: Performan
                     </p>
                 </div>
 
-                <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700/50">
-                    {(['1M', '3M', '6M', 'YTD', '1Y', 'ALL'] as const).map((r) => {
-                        let isDisabled = false;
-                        if (data.length > 0 && r !== 'ALL') {
-                            const firstHistoryDate = new Date(data[0].date);
-                            const now = new Date();
-                            const rangeStart = new Date();
+                <div className="flex flex-wrap gap-2 items-center">
+                    {/* Zoom Reset Button */}
+                    {isZoomed && (
+                        <button
+                            onClick={zoomOut}
+                            title="Reset Zoom"
+                            className="bg-slate-700/50 hover:bg-slate-600 text-white p-1.5 rounded-md transition-colors border border-slate-600 flex items-center justify-center"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                            </svg>
+                        </button>
+                    )}
 
-                            switch (r) {
-                                case '1M': rangeStart.setMonth(now.getMonth() - 1); break;
-                                case '3M': rangeStart.setMonth(now.getMonth() - 3); break;
-                                case '6M': rangeStart.setMonth(now.getMonth() - 6); break;
-                                case 'YTD': rangeStart.setMonth(0, 1); break; // Jan 1st of current year
-                                case '1Y': rangeStart.setFullYear(now.getFullYear() - 1); break;
+                    {/* Interval Selector */}
+                    <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700/50 mr-2">
+                        {(['DAILY', 'WEEKLY', 'MONTHLY'] as const).map((int) => {
+                            const isLongRange = ['3M', '6M', 'YTD', '1Y'].includes(range) || (range === 'ALL' && historyDurationDays > 30);
+                            const isDailyDisabled = int === 'DAILY' && isLongRange;
+
+                            return (
+                                <button
+                                    key={int}
+                                    onClick={() => !isDailyDisabled && setInterval(int)}
+                                    disabled={isDailyDisabled}
+                                    className={`px-2 py-1 text-[10px] font-medium rounded-md transition-all ${interval === int
+                                        ? 'bg-slate-600 text-white shadow-sm'
+                                        : isDailyDisabled
+                                            ? 'text-slate-600 cursor-not-allowed'
+                                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                                        }`}
+                                >
+                                    {int === 'DAILY' ? '1D' : int === 'WEEKLY' ? '1W' : '1M'}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Range Selector */}
+                    <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700/50">
+                        {(['1M', '3M', '6M', 'YTD', '1Y', 'ALL'] as const).map((r) => {
+                            let isDisabled = false;
+                            if (data.length > 0 && r !== 'ALL') {
+                                const firstHistoryDate = new Date(data[0].date);
+                                const now = new Date();
+                                const rangeStart = new Date();
+
+                                switch (r) {
+                                    case '1M': rangeStart.setMonth(now.getMonth() - 1); break;
+                                    case '3M': rangeStart.setMonth(now.getMonth() - 3); break;
+                                    case '6M': rangeStart.setMonth(now.getMonth() - 6); break;
+                                    case 'YTD': rangeStart.setMonth(0, 1); break; // Jan 1st of current year
+                                    case '1Y': rangeStart.setFullYear(now.getFullYear() - 1); break;
+                                }
+
+                                // Reset hours for fair comparison
+                                rangeStart.setHours(0, 0, 0, 0);
+                                firstHistoryDate.setHours(0, 0, 0, 0);
+
+                                // If the range start is BEFORE the first data point, disable it
+                                // (Exception: YTD is usually always allowed unless data starts AFTER today, which shouldn't happen)
+                                if (rangeStart < firstHistoryDate) {
+                                    isDisabled = true;
+                                }
                             }
 
-                            // Reset hours for fair comparison
-                            rangeStart.setHours(0, 0, 0, 0);
-                            firstHistoryDate.setHours(0, 0, 0, 0);
-
-                            // If the range start is BEFORE the first data point, disable it
-                            // (Exception: YTD is usually always allowed unless data starts AFTER today, which shouldn't happen)
-                            if (rangeStart < firstHistoryDate) {
-                                isDisabled = true;
-                            }
-                        }
-
-                        return (
-                            <button
-                                key={r}
-                                onClick={() => !isDisabled && setRange(r)}
-                                disabled={isDisabled}
-                                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${range === r
-                                    ? 'bg-slate-600 text-white shadow-sm'
-                                    : isDisabled
-                                        ? 'text-slate-600 cursor-not-allowed'
-                                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
-                                    }`}
-                            >
-                                {r}
-                            </button>
-                        );
-                    })}
+                            return (
+                                <button
+                                    key={r}
+                                    onClick={() => {
+                                        if (!isDisabled) {
+                                            handleRangeChange(r);
+                                            zoomOut(); // Reset zoom when changing range
+                                        }
+                                    }}
+                                    disabled={isDisabled}
+                                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${range === r
+                                        ? 'bg-slate-600 text-white shadow-sm'
+                                        : isDisabled
+                                            ? 'text-slate-600 cursor-not-allowed'
+                                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                                        }`}
+                                >
+                                    {rangeLabels[r] || r}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
-            <div className="h-64">
+            <div className="h-64 select-none">
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={enhancedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <AreaChart
+                        data={enhancedData}
+                        margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                        onMouseDown={(e: any) => {
+                            if (e && e.activeLabel) setRefAreaLeft(e.activeLabel);
+                        }}
+                        onMouseMove={(e: any) => {
+                            if (refAreaLeft && e && e.activeLabel) setRefAreaRight(e.activeLabel);
+                        }}
+                        onMouseUp={zoom}
+                    >
                         <defs>
                             <linearGradient id="greenGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
@@ -251,7 +418,7 @@ export default function PerformanceChart({ data, loading, totalCost }: Performan
                                     : '';
                                 return [formatValue(value as number) + changeStr, 'Value'];
                             }}
-                            labelFormatter={(label) => new Date(label).toLocaleDateString('it-IT', {
+                            labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', {
                                 day: '2-digit',
                                 month: 'long',
                                 year: 'numeric'
@@ -280,6 +447,17 @@ export default function PerformanceChart({ data, loading, totalCost }: Performan
                                 );
                             }}
                         />
+
+                        {(refAreaLeft && refAreaRight) ? (
+                            <ReferenceArea
+                                yAxisId={0}
+                                x1={refAreaLeft}
+                                x2={refAreaRight}
+                                strokeOpacity={0.3}
+                                fill="#8884d8"
+                                fillOpacity={0.3}
+                            />
+                        ) : null}
                     </AreaChart>
                 </ResponsiveContainer>
             </div>

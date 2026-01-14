@@ -25,6 +25,11 @@ export interface HistoryPoint {
     value: number;
 }
 
+export interface HistoryResponse {
+    portfolio: HistoryPoint[];
+    assets: Record<string, HistoryPoint[]>;
+}
+
 function getHeaders() {
     const token = localStorage.getItem('token');
     const headers: HeadersInit = {};
@@ -46,7 +51,7 @@ export async function getPortfolioSummary(assets?: string[]): Promise<PortfolioS
     return res.json();
 }
 
-export async function getPortfolioHistory(assets?: string[]): Promise<HistoryPoint[]> {
+export async function getPortfolioHistory(assets?: string[]): Promise<HistoryResponse> {
     const params = assets?.length ? `?assets=${assets.map(a => encodeURIComponent(a)).join(',')}` : '';
     const res = await fetch(`${API_BASE}/portfolio/history${params}`, {
         headers: getHeaders(),

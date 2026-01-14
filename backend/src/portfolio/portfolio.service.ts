@@ -171,8 +171,14 @@ export class PortfolioService {
             today,
         );
 
-        // Calculate portfolio value for each day
+        // Calculate portfolio value for each day AND build per-asset history
         const history: { date: string; value: number }[] = [];
+        const assetsHistory: Record<string, { date: string; value: number }[]> = {};
+
+        // Initialize arrays for each asset
+        for (const assetName of assetNames) {
+            assetsHistory[assetName] = [];
+        }
 
         for (const [dateStr, pricesForDate] of Object.entries(historicalPrices)) {
             let dailyValue = 0;
@@ -181,8 +187,13 @@ export class PortfolioService {
                 const quantity = holdingsMap[assetName];
                 const price = pricesForDate[assetName];
 
-                if (price && quantity > 0) {
-                    dailyValue += quantity * price;
+                if (price) {
+                    // Track individual asset price history
+                    assetsHistory[assetName].push({ date: dateStr, value: price });
+
+                    if (quantity > 0) {
+                        dailyValue += quantity * price;
+                    }
                 }
             }
 
@@ -193,12 +204,15 @@ export class PortfolioService {
 
         // Add today with real-time prices
         const todayStr = today.toISOString().split('T')[0];
-        const hasToday = history.some((h) => h.date === todayStr);
+        // Check if we already have an entry for today (e.g. from historical data if market closed)
+        const hasPortfolioToday = history.some((h) => h.date === todayStr);
 
-        if (!hasToday) {
-            const currentPrices = await this.pricesService.getPricesMap(assetNames);
+        // We fetch current prices anyway to ensure "latest" is real-time for the pills
+        const currentPrices = await this.pricesService.getPricesMap(assetNames);
+
+        // Update portfolio history for today if missing
+        if (!hasPortfolioToday) {
             let todayValue = 0;
-
             for (const assetName of assetNames) {
                 const quantity = holdingsMap[assetName];
                 const price = currentPrices[assetName];
@@ -206,13 +220,33 @@ export class PortfolioService {
                     todayValue += quantity * price;
                 }
             }
-
             if (todayValue > 0) {
                 history.push({ date: todayStr, value: todayValue });
             }
         }
 
-        return history.sort((a, b) => a.date.localeCompare(b.date));
+        // Ensure every asset has a "today" entry with current price
+        for (const assetName of assetNames) {
+            const price = currentPrices[assetName];
+            if (price) {
+                const assetHist = assetsHistory[assetName];
+                // Check if last entry is already today
+                const lastEntry = assetHist[assetHist.length - 1];
+                if (!lastEntry || lastEntry.date !== todayStr) {
+                    assetHist.push({ date: todayStr, value: price });
+                } else {
+                    // If it exists (e.g. from history), maybe update it with real-time? 
+                    // Usually historical close provides a stable value, but real-time is better for "now".
+                    // Let's overwrite/update.
+                    lastEntry.value = price;
+                }
+            }
+        }
+
+        return {
+            portfolio: history.sort((a, b) => a.date.localeCompare(b.date)),
+            assets: assetsHistory
+        };
     }
 
     async getTransactions(userId: string, limit?: number) {

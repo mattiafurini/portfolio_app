@@ -32,11 +32,11 @@ export const MOCK_SUMMARY: PortfolioSummary = {
 };
 
 // Generate a realistic looking 1-year curve
-const generateHistory = (): HistoryPoint[] => {
+export const generateHistory = (startVal: number = 21500, endVal: number = 24560.85): HistoryPoint[] => {
     const points: HistoryPoint[] = [];
     const days = 365;
-    const startValue = 21500;
-    const endValue = 24560.85;
+    const startValue = startVal;
+    const endValue = endVal;
 
     // Create a curve that combines linear trend with random noise and sine wave for realism
     const now = new Date();
@@ -56,8 +56,10 @@ const generateHistory = (): HistoryPoint[] => {
         // Add random noise that decreases slightly towards the end to ensure we hit target roughly
         // But we will force the exact target at the end anyway, just reducing noise magnitude
         // Noise: Sine wave + Random walk
-        const noiseValues = Math.sin(progress * Math.PI * 4) * 300; // Large waves
-        const randomJitter = (Math.random() - 0.5) * 150; // Daily jitter
+        // Scale noise relative to value magnitude (~1-2%)
+        const noiseScale = startValue * 0.015;
+        const noiseValues = Math.sin(progress * Math.PI * 4) * noiseScale;
+        const randomJitter = (Math.random() - 0.5) * (noiseScale * 0.5);
 
         // Damping factor: reduce noise influence as we get closer to end to avoid sharp jumps
         const damping = 1 - Math.pow(progress, 4); // Stays 1 for long, drops at end
@@ -77,6 +79,11 @@ const generateHistory = (): HistoryPoint[] => {
 };
 
 export const MOCK_HISTORY: HistoryPoint[] = generateHistory();
+
+export const MOCK_ASSETS_HISTORY: Record<string, HistoryPoint[]> = {
+    'iShares Core S&P 500 UCITS ETF': generateHistory(18922.50, 21838.50), // Based on MOCK_SUMMARY
+    'Vanguard FTSE All-World UCITS ETF': generateHistory(2577.50, 2722.35)
+};
 
 export const MOCK_TRANSACTIONS: Transaction[] = [
     {
