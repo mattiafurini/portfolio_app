@@ -8,7 +8,7 @@ export class PortfolioController {
     constructor(private readonly portfolioService: PortfolioService) { }
 
     @Get('summary')
-    async getSummary(@Request() req, @Query('assets') assets?: string) {
+    async getSummary(@Request() req: any, @Query('assets') assets?: string) {
         const assetFilter = assets
             ? assets.split(',').map(a => decodeURIComponent(a))
             : undefined;
@@ -16,7 +16,7 @@ export class PortfolioController {
     }
 
     @Get('history')
-    async getHistory(@Request() req, @Query('assets') assets?: string) {
+    async getHistory(@Request() req: any, @Query('assets') assets?: string) {
         const assetFilter = assets
             ? assets.split(',').map(a => decodeURIComponent(a))
             : undefined;

@@ -18,7 +18,7 @@ export class UploadController {
 
     @Post('fineco')
     @UseInterceptors(FileInterceptor('file'))
-    async uploadFineco(@Request() req, @UploadedFile() file: Express.Multer.File) {
+    async uploadFineco(@Request() req: any, @UploadedFile() file: Express.Multer.File) {
         if (!file) {
             throw new BadRequestException('No file uploaded');
         }

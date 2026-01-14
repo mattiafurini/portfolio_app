@@ -8,7 +8,7 @@ export class AssetsController {
     constructor(private readonly assetsService: AssetsService) { }
 
     @Get()
-    async getAll(@Request() req) {
+    async getAll(@Request() req: any) {
         return this.assetsService.getAll(req.user.id);
     }
 }
