@@ -5,8 +5,9 @@ import { PrismaService } from '../prisma/prisma.service';
 export class AssetsService {
     constructor(private prisma: PrismaService) { }
 
-    async getAll() {
+    async getAll(userId: string) {
         return this.prisma.asset.findMany({
+            where: { userId },
             include: {
                 transactions: {
                     orderBy: { date: 'desc' },

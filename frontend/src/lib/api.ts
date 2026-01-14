@@ -25,17 +25,36 @@ export interface HistoryPoint {
     value: number;
 }
 
+function getHeaders() {
+    const token = localStorage.getItem('token');
+    const headers: HeadersInit = {};
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+}
+
 export async function getPortfolioSummary(assets?: string[]): Promise<PortfolioSummary> {
     const params = assets?.length ? `?assets=${assets.map(a => encodeURIComponent(a)).join(',')}` : '';
-    const res = await fetch(`${API_BASE}/portfolio/summary${params}`);
-    if (!res.ok) throw new Error('Failed to fetch portfolio summary');
+    const res = await fetch(`${API_BASE}/portfolio/summary${params}`, {
+        headers: getHeaders(),
+    });
+    if (!res.ok) {
+        if (res.status === 401) throw new Error('Unauthorized');
+        throw new Error('Failed to fetch portfolio summary');
+    }
     return res.json();
 }
 
 export async function getPortfolioHistory(assets?: string[]): Promise<HistoryPoint[]> {
     const params = assets?.length ? `?assets=${assets.map(a => encodeURIComponent(a)).join(',')}` : '';
-    const res = await fetch(`${API_BASE}/portfolio/history${params}`);
-    if (!res.ok) throw new Error('Failed to fetch portfolio history');
+    const res = await fetch(`${API_BASE}/portfolio/history${params}`, {
+        headers: getHeaders(),
+    });
+    if (!res.ok) {
+        if (res.status === 401) throw new Error('Unauthorized');
+        throw new Error('Failed to fetch portfolio history');
+    }
     return res.json();
 }
 
@@ -45,6 +64,10 @@ export async function uploadFinecoFile(file: File): Promise<{ success: boolean; 
 
     const res = await fetch(`${API_BASE}/upload/fineco`, {
         method: 'POST',
+        headers: {
+            // FormData automatically sets Content-Type to multipart/form-data
+            ...getHeaders(),
+        },
         body: formData,
     });
 

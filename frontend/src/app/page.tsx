@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -6,16 +7,31 @@ import PortfolioCard from '@/components/PortfolioCard';
 import PerformanceChart from '@/components/PerformanceChart';
 import HoldingsTable from '@/components/HoldingsTable';
 import FileUpload from '@/components/FileUpload';
+import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
+  const { user, token, logout, isAuthenticated } = useAuth();
+  const router = useRouter();
+
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
 
+  // Authentication check
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    if (!storedToken) {
+      router.push('/login');
+    }
+  }, [router]);
+
   // Fetch all data (for summary only)
   const fetchData = useCallback(async () => {
+    if (!token) return;
+
     setLoading(true);
     try {
       const summaryData = await getPortfolioSummary();
@@ -33,7 +49,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   // Fetch history when filter changes
   const fetchHistoryForFilter = useCallback(async (assets: string[]) => {
@@ -72,8 +88,10 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (token) {
+      fetchData();
+    }
+  }, [fetchData, token]);
 
   // Short name helper
   const getShortName = (name: string) => {
@@ -86,6 +104,10 @@ export default function Home() {
     if (name.includes('All-World')) return 'All-World';
     return name.substring(0, 15) + '...';
   };
+
+  if (!token) {
+    return null; // or a loading spinner
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -113,16 +135,26 @@ export default function Home() {
                   <p className="text-slate-500 text-sm">Track your investments</p>
                 </div>
               </div>
-              <button
-                onClick={fetchData}
-                disabled={loading}
-                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-2 text-sm"
-              >
-                <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Refresh
-              </button>
+
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-400 hidden sm:block">{user?.email}</span>
+                <button
+                  onClick={logout}
+                  className="px-3 py-1.5 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/10 transition-colors"
+                >
+                  Esci
+                </button>
+                <button
+                  onClick={fetchData}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-2 text-sm"
+                >
+                  <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </button>
+              </div>
             </div>
           </div>
         </header>
@@ -152,10 +184,10 @@ export default function Home() {
                             key={holding.id}
                             onClick={() => toggleAsset(holding.name)}
                             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${isSelected
-                                ? profitPercent >= 0
-                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
-                                  : 'bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30'
-                                : 'bg-slate-700/50 text-slate-500 border border-slate-600/30 hover:bg-slate-700 hover:text-slate-300'
+                              ? profitPercent >= 0
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                                : 'bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30'
+                              : 'bg-slate-700/50 text-slate-500 border border-slate-600/30 hover:bg-slate-700 hover:text-slate-300'
                               }`}
                           >
                             {getShortName(holding.name)}

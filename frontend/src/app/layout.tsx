@@ -9,6 +9,10 @@ export const metadata: Metadata = {
   description: "Track your ETF investments with real-time data and performance charts",
 };
 
+import { AuthProvider } from "@/context/AuthContext";
+
+// ... imports
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -16,7 +20,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="it">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   );
 }

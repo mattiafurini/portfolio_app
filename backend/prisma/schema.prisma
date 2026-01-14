@@ -6,14 +6,31 @@ datasource db {
   provider = "postgresql"
 }
 
+// User authentication model
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String // Hashed password
+  assets    Asset[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Asset {
   id           String        @id @default(uuid())
-  name         String        @unique
+  name         String
   isin         String?
   ticker       String?
   transactions Transaction[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+
+  // Link to user
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Name must be unique per user, not globally
+  @@unique([name, userId])
 }
 
 model Transaction {

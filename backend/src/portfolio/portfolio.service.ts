@@ -29,8 +29,12 @@ export class PortfolioService {
         private pricesService: PricesService,
     ) { }
 
-    async getSummary(assetFilter?: string[]): Promise<PortfolioSummary> {
-        const whereClause = assetFilter ? { name: { in: assetFilter } } : {};
+    async getSummary(userId: string, assetFilter?: string[]): Promise<PortfolioSummary> {
+        const whereClause: any = { userId };
+        if (assetFilter) {
+            whereClause.name = { in: assetFilter };
+        }
+
         const assets = await this.prisma.asset.findMany({
             where: whereClause,
             include: {
@@ -115,9 +119,13 @@ export class PortfolioService {
         };
     }
 
-    async getHistory(assetFilter?: string[]) {
+    async getHistory(userId: string, assetFilter?: string[]) {
         // Get all transactions ordered by date
-        const whereClause = assetFilter ? { asset: { name: { in: assetFilter } } } : {};
+        const whereClause: any = { asset: { userId } };
+        if (assetFilter) {
+            whereClause.asset.name = { in: assetFilter };
+        }
+
         const transactions = await this.prisma.transaction.findMany({
             where: whereClause,
             include: { asset: true },

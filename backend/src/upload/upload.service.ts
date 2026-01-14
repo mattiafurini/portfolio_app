@@ -1,3 +1,4 @@
+
 import { Injectable, BadRequestException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,7 +16,7 @@ interface FinecoRow {
 export class UploadService {
     constructor(private prisma: PrismaService) { }
 
-    async parseAndSaveFineco(buffer: Buffer): Promise<{
+    async parseAndSaveFineco(buffer: Buffer, userId: string): Promise<{
         assetsCreated: number;
         transactionsCreated: number;
     }> {
@@ -80,10 +81,18 @@ export class UploadService {
                 date = new Date();
             }
 
-            // Upsert asset
-            let asset = await this.prisma.asset.findUnique({ where: { name } });
+            // Upsert asset linked to user
+            let asset = await this.prisma.asset.findFirst({
+                where: { name, userId }
+            });
+
             if (!asset) {
-                asset = await this.prisma.asset.create({ data: { name } });
+                asset = await this.prisma.asset.create({
+                    data: {
+                        name,
+                        userId
+                    }
+                });
                 assetsCreated++;
             }
 
