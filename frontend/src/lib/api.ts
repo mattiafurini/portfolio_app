@@ -58,6 +58,32 @@ export async function getPortfolioHistory(assets?: string[]): Promise<HistoryPoi
     return res.json();
 }
 
+export interface Transaction {
+    id: string;
+    date: string;
+    type: 'BUY' | 'SELL';
+    quantity: number;
+    price: number;
+    fees: number;
+    asset: {
+        name: string;
+        isin: string;
+        ticker: string | null;
+    };
+}
+
+export async function getTransactions(limit?: number): Promise<Transaction[]> {
+    const params = limit ? `?limit=${limit}` : '';
+    const res = await fetch(`${API_BASE}/portfolio/transactions${params}`, {
+        headers: getHeaders(),
+    });
+    if (!res.ok) {
+        if (res.status === 401) throw new Error('Unauthorized');
+        throw new Error('Failed to fetch transactions');
+    }
+    return res.json();
+}
+
 export async function uploadFinecoFile(file: File): Promise<{ success: boolean; message: string }> {
     const formData = new FormData();
     formData.append('file', file);

@@ -61,7 +61,32 @@ export default function PerformanceChart({ data, loading, totalCost }: Performan
         return date >= start;
     });
 
-    const displayData = filteredData.length > 0 ? filteredData : data; // Fallback if filter returns empty
+    // SAMPLING LOGIC (Reduce density of points based on range)
+    const displayData = filteredData.length > 0 ? filteredData.filter((d, index, array) => {
+        const date = new Date(d.date);
+
+        switch (range) {
+            case '1Y':
+            case '6M':
+            case 'ALL':
+                // One point per month (approx every 30 days)
+                // Always keep the last point
+                if (index === array.length - 1) return true;
+                return index % 30 === 0;
+
+            case '3M':
+                // One point every 2 weeks (14 days)
+                if (index === array.length - 1) return true;
+                return index % 14 === 0;
+
+            case '1M':
+                // Daily data (keep all)
+                return true;
+
+            default:
+                return true;
+        }
+    }) : data;
 
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr);

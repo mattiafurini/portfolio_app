@@ -22,4 +22,10 @@ export class PortfolioController {
             : undefined;
         return this.portfolioService.getHistory(req.user.id, assetFilter);
     }
+
+    @Get('transactions')
+    async getTransactions(@Request() req: any, @Query('limit') limit?: string) {
+        const take = limit ? parseInt(limit) : undefined;
+        return this.portfolioService.getTransactions(req.user.id, take);
+    }
 }

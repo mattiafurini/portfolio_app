@@ -214,4 +214,13 @@ export class PortfolioService {
 
         return history.sort((a, b) => a.date.localeCompare(b.date));
     }
+
+    async getTransactions(userId: string, limit?: number) {
+        return this.prisma.transaction.findMany({
+            where: { asset: { userId } },
+            include: { asset: { select: { name: true, isin: true, ticker: true } } },
+            orderBy: { date: 'desc' },
+            take: limit,
+        });
+    }
 }
