@@ -16,14 +16,14 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class UploadController {
     constructor(private readonly uploadService: UploadService) { }
 
-    @Post('fineco')
+    @Post('transactions')
     @UseInterceptors(FileInterceptor('file'))
-    async uploadFineco(@Request() req: any, @UploadedFile() file: Express.Multer.File) {
+    async uploadTransactionFile(@Request() req: any, @UploadedFile() file: Express.Multer.File) {
         if (!file) {
             throw new BadRequestException('No file uploaded');
         }
 
-        const result = await this.uploadService.parseAndSaveFineco(file.buffer, req.user.id);
+        const result = await this.uploadService.parseAndSaveTransaction(file.buffer, req.user.id);
         return {
             success: true,
             message: `Imported ${result.transactionsCreated} transactions for ${result.assetsCreated} assets`,

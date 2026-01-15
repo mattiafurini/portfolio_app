@@ -21,7 +21,7 @@ export default function PortfolioCard({ summary, loading }: PortfolioCardProps) 
     if (!summary) {
         return (
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700/50 shadow-xl">
-                <p className="text-slate-400">No data available. Upload a Fineco file to get started.</p>
+                <p className="text-slate-400">No data available. Upload a transaction file to get started.</p>
             </div>
         );
     }

@@ -16,7 +16,7 @@ interface FinecoRow {
 export class UploadService {
     constructor(private prisma: PrismaService) { }
 
-    async parseAndSaveFineco(buffer: Buffer, userId: string): Promise<{
+    async parseAndSaveTransaction(buffer: Buffer, userId: string): Promise<{
         assetsCreated: number;
         transactionsCreated: number;
     }> {
@@ -38,7 +38,7 @@ export class UploadService {
         }
 
         if (headerRowIndex === -1) {
-            throw new BadRequestException('Invalid Fineco file format: header row not found');
+            throw new BadRequestException('Invalid transaction file format: header row not found');
         }
 
         const headers = rawData[headerRowIndex] as string[];

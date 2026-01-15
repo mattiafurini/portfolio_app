@@ -89,11 +89,11 @@ export async function getTransactions(limit?: number): Promise<Transaction[]> {
     return res.json();
 }
 
-export async function uploadFinecoFile(file: File): Promise<{ success: boolean; message: string }> {
+export async function uploadTransactionFile(file: File): Promise<{ success: boolean; message: string }> {
     const formData = new FormData();
     formData.append('file', file);
 
-    const res = await fetch(`${API_BASE}/upload/fineco`, {
+    const res = await fetch(`${API_BASE}/upload/transactions`, {
         method: 'POST',
         headers: {
             // FormData automatically sets Content-Type to multipart/form-data

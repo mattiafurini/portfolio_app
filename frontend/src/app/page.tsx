@@ -383,20 +383,20 @@ export default function Home() {
                 </h3>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
-                    <span className="text-slate-400 text-sm">ETF Totali</span>
+                    <span className="text-slate-400 text-sm">Total ETFs</span>
                     <span className="text-white font-medium">{summary?.holdings.length ?? 0}</span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
-                    <span className="text-slate-400 text-sm">Nel Grafico</span>
+                    <span className="text-slate-400 text-sm">On Chart</span>
                     <span className="text-white font-medium">{selectedAssets.length}</span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-slate-700/50">
-                    <span className="text-slate-400 text-sm">Punti Dati</span>
+                    <span className="text-slate-400 text-sm">Data Points</span>
                     <span className="text-white font-medium">{history.length}</span>
                   </div>
                   <div className="flex justify-between items-center py-2">
-                    <span className="text-slate-400 text-sm">Ultimo Agg.</span>
-                    <span className="text-white font-medium">{loading ? '-' : 'Ora'}</span>
+                    <span className="text-slate-400 text-sm">Last Update</span>
+                    <span className="text-white font-medium">{loading ? '-' : 'Now'}</span>
                   </div>
                 </div>
               </div>
