@@ -180,24 +180,43 @@ export class PortfolioService {
             assetsHistory[assetName] = [];
         }
 
-        for (const [dateStr, pricesForDate] of Object.entries(historicalPrices)) {
+        // Sort dates to ensure chronological order for forward fill
+        const sortedDates = Object.keys(historicalPrices).sort();
+
+        // Track last known prices to handle missing data points (holidays, fetch failures)
+        const lastKnownPrices: Record<string, number> = {};
+
+        for (const dateStr of sortedDates) {
+            const pricesForDate = historicalPrices[dateStr];
             let dailyValue = 0;
+            // Check if we have valid prices for this day (to avoid adding days with 0 value if no prices exist yet)
+            let hasValidData = false;
 
             for (const assetName of assetNames) {
                 const quantity = holdingsMap[assetName];
-                const price = pricesForDate[assetName];
+                const currentPrice = pricesForDate[assetName];
 
-                if (price) {
+                if (currentPrice) {
+                    lastKnownPrices[assetName] = currentPrice;
+                }
+
+                // Use current price or fallback to last known price (Forward Fill)
+                const effectivePrice = currentPrice ?? lastKnownPrices[assetName];
+
+                if (effectivePrice) {
                     // Track individual asset price history
-                    assetsHistory[assetName].push({ date: dateStr, value: price });
+                    // Only push if we haven't already pushed this date (though here we iterate unique dates)
+                    // We push the EFFECTIVE price to avoid gaps in the chart
+                    assetsHistory[assetName].push({ date: dateStr, value: effectivePrice });
 
                     if (quantity > 0) {
-                        dailyValue += quantity * price;
+                        dailyValue += quantity * effectivePrice;
+                        hasValidData = true;
                     }
                 }
             }
 
-            if (dailyValue > 0) {
+            if (dailyValue > 0 && hasValidData) {
                 history.push({ date: dateStr, value: dailyValue });
             }
         }
