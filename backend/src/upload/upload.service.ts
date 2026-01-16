@@ -55,16 +55,14 @@ export class UploadService {
             dataOra: headers.indexOf('Data e ora'),
         };
 
-        // Fetch latest transaction date for this user to avoid duplicates
-        const latestTx = await this.prisma.transaction.findFirst({
-            where: { asset: { userId } },
-            orderBy: { date: 'desc' },
-        });
-        const latestTxDate = latestTx ? latestTx.date : new Date(0); // Epoch if no txs
+        if (dataRows.length === 0) {
+            return { assetsCreated: 0, transactionsCreated: 0, skipped: 0 };
+        }
 
-        let assetsCreated = 0;
-        let transactionsCreated = 0;
-        let skipped = 0;
+        // 1. Pre-process rows to find date range and build potential transactions
+        const parsedRows: any[] = [];
+        let minDate: Date | null = null;
+        let maxDate: Date | null = null;
 
         for (const row of dataRows) {
             if (!row || !row[colMap.titolo]) continue;
@@ -76,10 +74,8 @@ export class UploadService {
             const prezzo = parseFloat(row[colMap.prezzo]) || 0;
             const dataOraStr = row[colMap.dataOra]?.toString().trim();
 
-            // Skip non-executed transactions
             if (stato !== 'Eseguito' || !name || quantita === 0) continue;
 
-            // Parse date (format: DD/MM/YYYY HH:MM:SS)
             let date: Date;
             try {
                 const [datePart, timePart] = dataOraStr.split(' ');
@@ -87,45 +83,92 @@ export class UploadService {
                 const [hours, minutes, seconds] = (timePart || '00:00:00').split(':').map(Number);
                 date = new Date(year, month - 1, day, hours, minutes, seconds);
             } catch {
-                date = new Date();
+                continue;
             }
 
-            // DUPLICATE CHECK: Skip if date is older or equal to latest DB transaction
-            // We compare timestamps to be precise
-            if (date.getTime() <= latestTxDate.getTime()) {
+            if (!minDate || date < minDate) minDate = date;
+            if (!maxDate || date > maxDate) maxDate = date;
+
+            parsedRows.push({
+                name,
+                stato,
+                segno,
+                quantita,
+                prezzo,
+                date,
+            });
+        }
+
+        if (parsedRows.length === 0) {
+            return { assetsCreated: 0, transactionsCreated: 0, skipped: 0 };
+        }
+
+        // 2. Fetch existing transactions in this date range to compare
+        const existingTxs = await this.prisma.transaction.findMany({
+            where: {
+                asset: { userId },
+                date: {
+                    gte: minDate!,
+                    lte: maxDate!,
+                },
+            },
+            include: {
+                asset: true,
+            },
+        });
+
+        // 3. Build a Set of signatures for O(1) lookup
+        // Signature: AssetName|DateISO|Type|Quantity|Price
+        const existingSignatures = new Set<string>();
+        for (const tx of existingTxs) {
+            const sig = `${tx.asset.name}|${tx.date.getTime()}|${tx.type}|${tx.quantity}|${tx.price}`;
+            existingSignatures.add(sig);
+        }
+
+        let assetsCreated = 0;
+        let transactionsCreated = 0;
+        let skipped = 0;
+
+        // 4. Process valid rows
+        for (const row of parsedRows) {
+            const type = row.segno === 'Acquisto' ? 'BUY' : 'SELL';
+
+            // Generate signature for this row
+            const sig = `${row.name}|${row.date.getTime()}|${type}|${row.quantita}|${row.prezzo}`;
+
+            if (existingSignatures.has(sig)) {
                 skipped++;
                 continue;
             }
 
-            // Upsert asset linked to user
+            // Not a duplicate -> Insert
             let asset = await this.prisma.asset.findFirst({
-                where: { name, userId }
+                where: { name: row.name, userId }
             });
 
             if (!asset) {
                 asset = await this.prisma.asset.create({
                     data: {
-                        name,
+                        name: row.name,
                         userId
                     }
                 });
                 assetsCreated++;
             }
 
-            // Determine transaction type
-            const type = segno === 'Acquisto' ? 'BUY' : 'SELL';
-
-            // Create transaction
             await this.prisma.transaction.create({
                 data: {
                     assetId: asset.id,
                     type,
-                    quantity: quantita,
-                    price: prezzo,
-                    date,
+                    quantity: row.quantita,
+                    price: row.prezzo,
+                    date: row.date,
                 },
             });
             transactionsCreated++;
+
+            // Add to set to prevent duplicates WITHIN the file itself
+            existingSignatures.add(sig);
         }
 
         return { assetsCreated, transactionsCreated, skipped };
