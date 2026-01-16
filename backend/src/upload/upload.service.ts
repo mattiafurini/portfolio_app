@@ -19,6 +19,7 @@ export class UploadService {
     async parseAndSaveTransaction(buffer: Buffer, userId: string): Promise<{
         assetsCreated: number;
         transactionsCreated: number;
+        skipped: number;
     }> {
         // Parse Excel file
         const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -54,8 +55,16 @@ export class UploadService {
             dataOra: headers.indexOf('Data e ora'),
         };
 
+        // Fetch latest transaction date for this user to avoid duplicates
+        const latestTx = await this.prisma.transaction.findFirst({
+            where: { asset: { userId } },
+            orderBy: { date: 'desc' },
+        });
+        const latestTxDate = latestTx ? latestTx.date : new Date(0); // Epoch if no txs
+
         let assetsCreated = 0;
         let transactionsCreated = 0;
+        let skipped = 0;
 
         for (const row of dataRows) {
             if (!row || !row[colMap.titolo]) continue;
@@ -79,6 +88,13 @@ export class UploadService {
                 date = new Date(year, month - 1, day, hours, minutes, seconds);
             } catch {
                 date = new Date();
+            }
+
+            // DUPLICATE CHECK: Skip if date is older or equal to latest DB transaction
+            // We compare timestamps to be precise
+            if (date.getTime() <= latestTxDate.getTime()) {
+                skipped++;
+                continue;
             }
 
             // Upsert asset linked to user
@@ -112,6 +128,6 @@ export class UploadService {
             transactionsCreated++;
         }
 
-        return { assetsCreated, transactionsCreated };
+        return { assetsCreated, transactionsCreated, skipped };
     }
 }

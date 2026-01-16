@@ -26,7 +26,7 @@ export class UploadController {
         const result = await this.uploadService.parseAndSaveTransaction(file.buffer, req.user.id);
         return {
             success: true,
-            message: `Imported ${result.transactionsCreated} transactions for ${result.assetsCreated} assets`,
+            message: `Imported ${result.transactionsCreated} transactions for ${result.assetsCreated} assets. Skipped ${result.skipped} duplicates.`,
             ...result,
         };
     }
