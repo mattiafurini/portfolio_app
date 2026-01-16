@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request, Delete, Param } from '@nestjs/common';
 import { PortfolioService } from './portfolio.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -27,5 +27,9 @@ export class PortfolioController {
     async getTransactions(@Request() req: any, @Query('limit') limit?: string) {
         const take = limit ? parseInt(limit) : undefined;
         return this.portfolioService.getTransactions(req.user.id, take);
+    }
+    @Delete('transactions/:id')
+    async deleteTransaction(@Request() req: any, @Param('id') id: string) {
+        return this.portfolioService.deleteTransaction(req.user.id, id);
     }
 }

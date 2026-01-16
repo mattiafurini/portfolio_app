@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { getTransactions, Transaction } from '@/lib/api';
+import { getTransactions, deleteTransaction, Transaction } from '@/lib/api';
 
 export default function TransactionsPage() {
     const { token, logout, user } = useAuth();
@@ -11,27 +11,42 @@ export default function TransactionsPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
 
+    async function fetchTx() {
+        try {
+            const data = await getTransactions();
+            setTransactions(data);
+        } catch (error) {
+            console.error('Failed to fetch transactions:', error);
+        } finally {
+            setLoading(false);
+        }
+    }
+
     useEffect(() => {
         if (!localStorage.getItem('token')) {
             router.push('/login');
             return;
         }
 
-        async function fetchTx() {
-            try {
-                const data = await getTransactions();
-                setTransactions(data);
-            } catch (error) {
-                console.error('Failed to fetch transactions:', error);
-            } finally {
-                setLoading(false);
-            }
-        }
-
         if (token) {
             fetchTx();
         }
     }, [token, router]);
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Are you sure you want to delete this transaction? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            await deleteTransaction(id);
+            // Optimistic update or refetch
+            setTransactions(prev => prev.filter(tx => tx.id !== id));
+        } catch (error) {
+            console.error('Failed to delete transaction:', error);
+            alert('Failed to delete transaction. Please try again.');
+        }
+    };
 
     const formatDate = (dateStr: string) => {
         return new Date(dateStr).toLocaleDateString('it-IT', {
@@ -108,11 +123,12 @@ export default function TransactionsPage() {
                                         <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Price</th>
                                         <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Total</th>
                                         <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Fees</th>
+                                        <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/50">
                                     {transactions.map((tx) => (
-                                        <tr key={tx.id} className="hover:bg-slate-800/30 transition-colors">
+                                        <tr key={tx.id} className="hover:bg-slate-800/30 transition-colors group">
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
                                                 {formatDate(tx.date)}
                                             </td>
@@ -122,8 +138,8 @@ export default function TransactionsPage() {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${tx.type === 'BUY'
-                                                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                                    : 'bg-red-500/10 text-red-400 border border-red-500/20'
                                                     }`}>
                                                     {tx.type}
                                                 </span>
@@ -139,6 +155,17 @@ export default function TransactionsPage() {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-400 text-right">
                                                 {formatCurrency(tx.fees)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <button
+                                                    onClick={() => handleDelete(tx.id)}
+                                                    className="text-slate-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-1"
+                                                    title="Delete transaction"
+                                                >
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
                                             </td>
                                         </tr>
                                     ))}

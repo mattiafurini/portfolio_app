@@ -140,33 +140,16 @@ export class PortfolioService {
         const firstTxDate = transactions[0].date;
         const today = new Date();
 
-        // Build holdings state from transactions
-        const holdingsMap: Record<string, number> = {}; // asset name -> quantity
-
-        for (const tx of transactions) {
-            const assetName = tx.asset.name;
-            if (!holdingsMap[assetName]) {
-                holdingsMap[assetName] = 0;
-            }
-            if (tx.type === 'BUY') {
-                holdingsMap[assetName] += tx.quantity;
-            } else {
-                holdingsMap[assetName] -= tx.quantity;
-            }
-        }
-
-        // Get asset names with positive holdings
-        const assetNames = Object.keys(holdingsMap).filter(
-            (name) => holdingsMap[name] > 0,
-        );
-
-        if (assetNames.length === 0) {
-            return [];
-        }
+        // Initialize current holdings state (starts empty)
+        const currentHoldings: Record<string, number> = {};
+        let txIndex = 0;
 
         // Fetch historical prices for all assets from first transaction date to today
+        // We need to fetch for all assets that *ever* appear in transactions, not just current holdings
+        const allAssetNamesInTransactions = Array.from(new Set(transactions.map(tx => tx.asset.name)));
+
         const historicalPrices = await this.pricesService.getHistoricalPricesForAssets(
-            assetNames,
+            allAssetNamesInTransactions,
             firstTxDate,
             today,
         );
@@ -175,11 +158,6 @@ export class PortfolioService {
         const history: { date: string; value: number }[] = [];
         const assetsHistory: Record<string, { date: string; value: number }[]> = {};
 
-        // Initialize arrays for each asset
-        for (const assetName of assetNames) {
-            assetsHistory[assetName] = [];
-        }
-
         // Sort dates to ensure chronological order for forward fill
         const sortedDates = Object.keys(historicalPrices).sort();
 
@@ -187,13 +165,38 @@ export class PortfolioService {
         const lastKnownPrices: Record<string, number> = {};
 
         for (const dateStr of sortedDates) {
+            // 1. Update holdings based on transactions up to the end of this day
+            // We assume dateStr is YYYY-MM-DD. We compare with transaction date.
+            // Transactions are already ordered by date asc.
+            const currentDateEndOfDay = new Date(dateStr);
+            currentDateEndOfDay.setHours(23, 59, 59, 999);
+
+            while (txIndex < transactions.length && transactions[txIndex].date <= currentDateEndOfDay) {
+                const tx = transactions[txIndex];
+                const assetName = tx.asset.name;
+
+                if (!currentHoldings[assetName]) {
+                    currentHoldings[assetName] = 0;
+                }
+
+                if (tx.type === 'BUY') {
+                    currentHoldings[assetName] += tx.quantity;
+                } else {
+                    currentHoldings[assetName] -= tx.quantity;
+                }
+                txIndex++;
+            }
+
+            // 2. Calculate Portfolio Value using CURRENT holdings and CURRENT prices
             const pricesForDate = historicalPrices[dateStr];
             let dailyValue = 0;
             // Check if we have valid prices for this day (to avoid adding days with 0 value if no prices exist yet)
             let hasValidData = false;
+            // Only count assets that we actually hold right now
+            const activeAssets = Object.keys(currentHoldings).filter(name => currentHoldings[name] > 0);
 
-            for (const assetName of assetNames) {
-                const quantity = holdingsMap[assetName];
+            for (const assetName of activeAssets) {
+                const quantity = currentHoldings[assetName];
                 const currentPrice = pricesForDate[assetName];
 
                 if (currentPrice) {
@@ -207,6 +210,7 @@ export class PortfolioService {
                     // Track individual asset price history
                     // Only push if we haven't already pushed this date (though here we iterate unique dates)
                     // We push the EFFECTIVE price to avoid gaps in the chart
+                    if (!assetsHistory[assetName]) assetsHistory[assetName] = []; // Initialize if seen for first time
                     assetsHistory[assetName].push({ date: dateStr, value: effectivePrice });
 
                     if (quantity > 0) {
@@ -216,7 +220,11 @@ export class PortfolioService {
                 }
             }
 
-            if (dailyValue > 0 && hasValidData) {
+            // Only add point if we have value OR if we hold nothing (value 0 is correct then)
+            // But usually we only show history when there is something.
+            // If dailyValue is 0 because we hold nothing, that's accurate. 
+            // If dailyValue is 0 because price is missing but we have holdings, `hasValidData` (based on effectivePrice) handles it.
+            if (activeAssets.length > 0 && hasValidData) {
                 history.push({ date: dateStr, value: dailyValue });
             }
         }
@@ -227,13 +235,13 @@ export class PortfolioService {
         const hasPortfolioToday = history.some((h) => h.date === todayStr);
 
         // We fetch current prices anyway to ensure "latest" is real-time for the pills
-        const currentPrices = await this.pricesService.getPricesMap(assetNames);
+        const currentPrices = await this.pricesService.getPricesMap(allAssetNamesInTransactions);
 
         // Update portfolio history for today if missing
         if (!hasPortfolioToday) {
             let todayValue = 0;
-            for (const assetName of assetNames) {
-                const quantity = holdingsMap[assetName];
+            for (const assetName of Object.keys(currentHoldings)) {
+                const quantity = currentHoldings[assetName];
                 const price = currentPrices[assetName];
                 if (price && quantity > 0) {
                     todayValue += quantity * price;
@@ -245,18 +253,19 @@ export class PortfolioService {
         }
 
         // Ensure every asset has a "today" entry with current price
-        for (const assetName of assetNames) {
+        for (const assetName of allAssetNamesInTransactions) {
             const price = currentPrices[assetName];
             if (price) {
+                // Initialize if not exists (e.g. asset sold before but we want history, or just robust)
+                if (!assetsHistory[assetName]) assetsHistory[assetName] = [];
+
                 const assetHist = assetsHistory[assetName];
                 // Check if last entry is already today
                 const lastEntry = assetHist[assetHist.length - 1];
                 if (!lastEntry || lastEntry.date !== todayStr) {
                     assetHist.push({ date: todayStr, value: price });
                 } else {
-                    // If it exists (e.g. from history), maybe update it with real-time? 
-                    // Usually historical close provides a stable value, but real-time is better for "now".
-                    // Let's overwrite/update.
+                    // Update existing today entry
                     lastEntry.value = price;
                 }
             }
@@ -274,6 +283,22 @@ export class PortfolioService {
             include: { asset: { select: { name: true, isin: true, ticker: true } } },
             orderBy: { date: 'desc' },
             take: limit,
+        });
+    }
+
+    async deleteTransaction(userId: string, transactionId: string) {
+        // Verify transaction belongs to user
+        const transaction = await this.prisma.transaction.findUnique({
+            where: { id: transactionId },
+            include: { asset: true },
+        });
+
+        if (!transaction || transaction.asset.userId !== userId) {
+            throw new Error('Transaction not found or access denied');
+        }
+
+        return this.prisma.transaction.delete({
+            where: { id: transactionId },
         });
     }
 }

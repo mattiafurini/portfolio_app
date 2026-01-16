@@ -105,3 +105,12 @@ export async function uploadTransactionFile(file: File): Promise<{ success: bool
     if (!res.ok) throw new Error('Failed to upload file');
     return res.json();
 }
+
+export async function deleteTransaction(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/portfolio/transactions/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+    });
+
+    if (!res.ok) throw new Error('Failed to delete transaction');
+}
