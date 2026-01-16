@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 
 export default function Home() {
-  const { user, token, logout, isAuthenticated } = useAuth();
+  const { user, token, logout, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
 
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
@@ -25,14 +25,15 @@ export default function Home() {
   const [range, setRange] = useState<'1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL'>('ALL');
   const [viewRange, setViewRange] = useState<{ start: string; end: string } | null>(null);
 
-  // Demo mode check
-  const isDemo = !token;
+  // Demo mode check - only if auth check is done and no token
+  const isDemo = !isAuthLoading && !token;
 
   // Authentication check - REMOVED strictly forcing login
   // ... (useEffect remains same)
 
   // Fetch data
   const fetchData = useCallback(async () => {
+    if (isAuthLoading) return;
     setLoading(true);
 
     if (isDemo) {
@@ -68,10 +69,12 @@ export default function Home() {
       setRecentTransactions(txData);
     } catch (error) {
       console.error('Failed to fetch data:', error);
+      // Ensure summary is null if fetch fails (dont show stale mock data)
+      setSummary(null);
     } finally {
       if (!isDemo) setLoading(false);
     }
-  }, [token, isDemo]);
+  }, [token, isDemo, isAuthLoading]);
 
   // Fetch history when filter changes
   const fetchHistoryForFilter = useCallback(async (assets: string[]) => {
@@ -195,6 +198,14 @@ export default function Home() {
 
     return ((endPrice - startPrice) / startPrice) * 100;
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
