@@ -114,3 +114,16 @@ export async function deleteTransaction(id: string): Promise<void> {
 
     if (!res.ok) throw new Error('Failed to delete transaction');
 }
+
+export async function deleteTransactions(ids: string[]): Promise<void> {
+    const res = await fetch(`${API_BASE}/portfolio/transactions/delete`, {
+        method: 'POST',
+        headers: {
+            ...getHeaders(),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids }),
+    });
+
+    if (!res.ok) throw new Error('Failed to delete transactions');
+}

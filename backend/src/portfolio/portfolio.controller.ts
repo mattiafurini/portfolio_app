@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Request, Delete, Param } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request, Delete, Param, Post, Body } from '@nestjs/common';
 import { PortfolioService } from './portfolio.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -31,5 +31,10 @@ export class PortfolioController {
     @Delete('transactions/:id')
     async deleteTransaction(@Request() req: any, @Param('id') id: string) {
         return this.portfolioService.deleteTransaction(req.user.id, id);
+    }
+
+    @Post('transactions/delete')
+    async deleteTransactions(@Request() req: any, @Body() body: { ids: string[] }) {
+        return this.portfolioService.deleteTransactions(req.user.id, body.ids);
     }
 }

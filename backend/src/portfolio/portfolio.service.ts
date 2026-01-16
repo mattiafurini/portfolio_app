@@ -297,8 +297,19 @@ export class PortfolioService {
             throw new Error('Transaction not found or access denied');
         }
 
-        return this.prisma.transaction.delete({
+        await this.prisma.transaction.delete({
             where: { id: transactionId },
         });
+        return { success: true };
+    }
+
+    async deleteTransactions(userId: string, transactionIds: string[]) {
+        const result = await this.prisma.transaction.deleteMany({
+            where: {
+                id: { in: transactionIds },
+                asset: { userId: userId }
+            }
+        });
+        return { success: true, count: result.count };
     }
 }
