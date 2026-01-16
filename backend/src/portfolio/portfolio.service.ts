@@ -133,7 +133,7 @@ export class PortfolioService {
         });
 
         if (transactions.length === 0) {
-            return [];
+            return { portfolio: [], assets: {} };
         }
 
         // Get first transaction date and today
