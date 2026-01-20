@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
-import { getPortfolios, createPortfolio as apiCreatePortfolio, updatePortfolio as apiUpdatePortfolio, Portfolio } from '@/lib/api';
+import { getPortfolios, createPortfolio as apiCreatePortfolio, updatePortfolio as apiUpdatePortfolio, deletePortfolio as apiDeletePortfolio, Portfolio } from '@/lib/api';
 
 interface PortfolioContextType {
     portfolios: Portfolio[];
@@ -13,6 +13,7 @@ interface PortfolioContextType {
     selectPortfolio: (portfolioId: string) => void;
     createPortfolio: (name: string) => Promise<void>;
     updatePortfolioName: (portfolioId: string, name: string) => Promise<void>;
+    deletePortfolio: (portfolioId: string) => Promise<void>;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -53,6 +54,9 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
             if (selected) {
                 setCurrentPortfolio(selected);
                 localStorage.setItem(STORAGE_KEY, selected.id);
+            } else if (data.length === 0) {
+                setCurrentPortfolio(null);
+                localStorage.removeItem(STORAGE_KEY);
             }
         } catch (error) {
             console.error('Failed to load portfolios:', error);
@@ -77,8 +81,13 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     const createPortfolio = async (name: string) => {
         try {
             const newPortfolio = await apiCreatePortfolio(name);
-            await refreshPortfolios();
-            selectPortfolio(newPortfolio.id);
+            // Refresh list to include new one
+            const updatedPortfolios = await getPortfolios();
+            setPortfolios(updatedPortfolios);
+
+            // Immediately select the new one using the API response
+            setCurrentPortfolio(newPortfolio);
+            localStorage.setItem(STORAGE_KEY, newPortfolio.id);
         } catch (error) {
             console.error('Failed to create portfolio:', error);
             throw error;
@@ -95,6 +104,22 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const deletePortfolio = async (portfolioId: string) => {
+        try {
+            // Prevent deleting the last portfolio
+            if (portfolios.length <= 1) {
+                alert("You cannot delete your only portfolio. Create another one first.");
+                return;
+            }
+
+            await apiDeletePortfolio(portfolioId);
+            await refreshPortfolios();
+        } catch (error) {
+            console.error('Failed to delete portfolio:', error);
+            throw error;
+        }
+    };
+
     return (
         <PortfolioContext.Provider value={{
             portfolios,
@@ -103,7 +128,8 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
             refreshPortfolios,
             selectPortfolio,
             createPortfolio,
-            updatePortfolioName
+            updatePortfolioName,
+            deletePortfolio
         }}>
             {children}
         </PortfolioContext.Provider>

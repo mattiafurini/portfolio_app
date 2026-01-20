@@ -5,9 +5,9 @@ import { useState } from 'react';
 import { usePortfolio } from '@/context/PortfolioContext';
 
 export default function PortfolioSelector() {
-    const { portfolios, currentPortfolio, selectPortfolio, createPortfolio, updatePortfolioName, isLoading } = usePortfolio();
+    const { portfolios, currentPortfolio, selectPortfolio, createPortfolio, updatePortfolioName, deletePortfolio, isLoading } = usePortfolio();
     const [isCreating, setIsCreating] = useState(false);
-    const [isEditing, setIsEditing] = useState(false);
+    const [editingPortfolioId, setEditingPortfolioId] = useState<string | null>(null);
     const [newPortfolioName, setNewPortfolioName] = useState('');
     const [editName, setEditName] = useState('');
     const [isOpen, setIsOpen] = useState(false);
@@ -24,18 +24,16 @@ export default function PortfolioSelector() {
 
     const handleRename = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editName.trim() || !currentPortfolio) return;
+        if (!editName.trim() || !editingPortfolioId) return;
 
-        await updatePortfolioName(currentPortfolio.id, editName);
+        await updatePortfolioName(editingPortfolioId, editName);
         setEditName('');
-        setIsEditing(false);
+        setEditingPortfolioId(null);
     };
 
-    const startEditing = () => {
-        if (currentPortfolio) {
-            setEditName(currentPortfolio.name);
-            setIsEditing(true);
-        }
+    const startEditing = (portfolio: { id: string, name: string }) => {
+        setEditingPortfolioId(portfolio.id);
+        setEditName(portfolio.name);
     };
 
     if (isLoading && !currentPortfolio) return <div className="h-10 w-32 bg-slate-800/50 rounded-xl animate-pulse"></div>;
@@ -64,11 +62,11 @@ export default function PortfolioSelector() {
                         onClick={() => {
                             setIsOpen(false);
                             setIsCreating(false);
-                            setIsEditing(false);
+                            setEditingPortfolioId(null);
                         }}
                     />
                     <div className="absolute top-full left-0 mt-2 w-72 bg-slate-900 border border-slate-700/50 rounded-xl shadow-xl z-50 overflow-hidden">
-                        {isEditing ? (
+                        {editingPortfolioId ? (
                             <div className="p-3">
                                 <h3 className="text-sm font-medium text-white mb-2">Rename Portfolio</h3>
                                 <form onSubmit={handleRename}>
@@ -83,7 +81,7 @@ export default function PortfolioSelector() {
                                     <div className="flex gap-2">
                                         <button
                                             type="button"
-                                            onClick={() => setIsEditing(false)}
+                                            onClick={() => setEditingPortfolioId(null)}
                                             className="flex-1 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 text-xs hover:text-white hover:bg-slate-800"
                                         >
                                             Cancel
@@ -117,13 +115,12 @@ export default function PortfolioSelector() {
                                                 <span className="font-medium">{p.name}</span>
                                             </button>
 
-                                            <div className="flex items-center gap-2">
-                                                {currentPortfolio?.id === p.id && (
+                                            <div className="flex items-center gap-1">
+                                                <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            selectPortfolio(p.id); // Ensure selected
-                                                            startEditing();
+                                                            startEditing(p);
                                                         }}
                                                         className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors"
                                                         title="Rename Portfolio"
@@ -132,9 +129,23 @@ export default function PortfolioSelector() {
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                                         </svg>
                                                     </button>
-                                                )}
+                                                    <button
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            if (confirm(`Are you sure you want to delete "${p.name}"? This action cannot be undone.`)) {
+                                                                await deletePortfolio(p.id);
+                                                            }
+                                                        }}
+                                                        className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                        title="Delete Portfolio"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
                                                 {currentPortfolio?.id === p.id && (
-                                                    <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <svg className="w-4 h-4 text-emerald-500 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                                     </svg>
                                                 )}
