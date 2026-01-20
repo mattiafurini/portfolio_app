@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 };
 
 import { AuthProvider } from "@/context/AuthContext";
+import { PortfolioProvider } from "@/context/PortfolioContext";
 
 // ... imports
 
@@ -22,7 +23,9 @@ export default function RootLayout({
     <html lang="it">
       <body className={inter.className} suppressHydrationWarning={true}>
         <AuthProvider>
-          {children}
+          <PortfolioProvider>
+            {children}
+          </PortfolioProvider>
         </AuthProvider>
       </body>
     </html>

@@ -5,9 +5,10 @@ import { uploadTransactionFile } from '@/lib/api';
 
 interface FileUploadProps {
     onUploadSuccess: () => void;
+    portfolioId?: string;
 }
 
-export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
+export default function FileUpload({ onUploadSuccess, portfolioId }: FileUploadProps) {
     const [uploading, setUploading] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
         setError(null);
 
         try {
-            const result = await uploadTransactionFile(file);
+            const result = await uploadTransactionFile(file, portfolioId);
             setMessage(result.message);
             onUploadSuccess();
         } catch (err) {

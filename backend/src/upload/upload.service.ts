@@ -16,7 +16,7 @@ interface FinecoRow {
 export class UploadService {
     constructor(private prisma: PrismaService) { }
 
-    async parseAndSaveTransaction(buffer: Buffer, userId: string): Promise<{
+    async parseAndSaveTransaction(buffer: Buffer, userId: string, portfolioId?: string): Promise<{
         assetsCreated: number;
         transactionsCreated: number;
         skipped: number;
@@ -106,7 +106,10 @@ export class UploadService {
         // 2. Fetch existing transactions in this date range to compare
         const existingTxs = await this.prisma.transaction.findMany({
             where: {
-                asset: { userId },
+                asset: {
+                    userId,
+                    ...(portfolioId ? { portfolioId } : {})
+                },
                 date: {
                     gte: minDate!,
                     lte: maxDate!,
@@ -143,14 +146,19 @@ export class UploadService {
 
             // Not a duplicate -> Insert
             let asset = await this.prisma.asset.findFirst({
-                where: { name: row.name, userId }
+                where: {
+                    name: row.name,
+                    userId,
+                    ...(portfolioId ? { portfolioId } : {})
+                }
             });
 
             if (!asset) {
                 asset = await this.prisma.asset.create({
                     data: {
                         name: row.name,
-                        userId
+                        userId,
+                        portfolioId
                     }
                 });
                 assetsCreated++;

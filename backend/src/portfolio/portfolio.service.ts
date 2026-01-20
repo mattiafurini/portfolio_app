@@ -29,8 +29,21 @@ export class PortfolioService {
         private pricesService: PricesService,
     ) { }
 
-    async getSummary(userId: string, assetFilter?: string[]): Promise<PortfolioSummary> {
-        const whereClause: any = { userId };
+    async getSummary(userId: string, assetFilter?: string[], portfolioId?: string): Promise<PortfolioSummary> {
+        let whereClause: any = { userId };
+
+        // If portfolioId provided, filter by it. Else, we could default to "Default" name if we wanted strict separation,
+        // but for now let's just use whatever is passed. If undefined, it might look for assets with userId only?
+        // Actually, we migrated assets to have portfolioId.
+        if (portfolioId) {
+            whereClause = { ...whereClause, portfolioId };
+        } else {
+            // Fallback for backward compatibility or "ALL" view?
+            // Ideally we should enforce specific portfolio.
+            // If no portfolioId, maybe we find the "Default" one? 
+            // Let's assume frontend will always pass it. If not, we might return everything for the user (aggregated view).
+        }
+
         if (assetFilter) {
             whereClause.name = { in: assetFilter };
         }
@@ -119,9 +132,14 @@ export class PortfolioService {
         };
     }
 
-    async getHistory(userId: string, assetFilter?: string[]) {
+    async getHistory(userId: string, assetFilter?: string[], portfolioId?: string) {
         // Get all transactions ordered by date
-        const whereClause: any = { asset: { userId } };
+        let whereClause: any = { asset: { userId } };
+
+        if (portfolioId) {
+            whereClause.asset.portfolioId = portfolioId;
+        }
+
         if (assetFilter) {
             whereClause.asset.name = { in: assetFilter };
         }
@@ -277,9 +295,14 @@ export class PortfolioService {
         };
     }
 
-    async getTransactions(userId: string, limit?: number) {
+    async getTransactions(userId: string, limit?: number, portfolioId?: string) {
+        const whereClause: any = { asset: { userId } };
+        if (portfolioId) {
+            whereClause.asset.portfolioId = portfolioId;
+        }
+
         return this.prisma.transaction.findMany({
-            where: { asset: { userId } },
+            where: whereClause,
             include: { asset: { select: { name: true, isin: true, ticker: true } } },
             orderBy: { date: 'desc' },
             take: limit,
@@ -311,5 +334,52 @@ export class PortfolioService {
             }
         });
         return { success: true, count: result.count };
+    }
+    async createPortfolio(userId: string, name: string) {
+        return this.prisma.portfolio.create({
+            data: {
+                userId,
+                name,
+            },
+        });
+    }
+
+    async getUserPortfolios(userId: string) {
+        return this.prisma.portfolio.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'asc' },
+        });
+    }
+
+    async updatePortfolio(userId: string, portfolioId: string, name: string) {
+        // Verify ownership
+        const portfolio = await this.prisma.portfolio.findUnique({
+            where: { id: portfolioId },
+        });
+
+        if (!portfolio || portfolio.userId !== userId) {
+            throw new Error('Portfolio not found or access denied');
+        }
+
+        return this.prisma.portfolio.update({
+            where: { id: portfolioId },
+            data: { name },
+        });
+    }
+
+    async deletePortfolio(userId: string, portfolioId: string) {
+        // Verify ownership
+        const portfolio = await this.prisma.portfolio.findUnique({
+            where: { id: portfolioId },
+        });
+
+        if (!portfolio || portfolio.userId !== userId) {
+            throw new Error('Portfolio not found or access denied');
+        }
+
+        // Transactions and assets should be cascaded by Prisma relation but let's be safe/aware
+        return this.prisma.portfolio.delete({
+            where: { id: portfolioId },
+        });
     }
 }

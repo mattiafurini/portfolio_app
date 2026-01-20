@@ -1,20 +1,27 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+// ... imports
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { usePortfolio } from '@/context/PortfolioContext'; // Added import
+import PortfolioSelector from '@/components/PortfolioSelector'; // Added import
 import { getTransactions, deleteTransaction, deleteTransactions, Transaction } from '@/lib/api';
 
 export default function TransactionsPage() {
     const { token, logout, user } = useAuth();
+    const { currentPortfolio, isLoading: isPortfolioLoading } = usePortfolio(); // Added usePortfolio
     const router = useRouter();
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-    async function fetchTx() {
+    const fetchTx = useCallback(async () => {
+        if (!currentPortfolio?.id) return;
+
         try {
-            const data = await getTransactions();
+            setLoading(true);
+            const data = await getTransactions(undefined, currentPortfolio.id);
             setTransactions(data);
             setSelectedIds(new Set()); // Reset selection on refresh
         } catch (error) {
@@ -22,7 +29,7 @@ export default function TransactionsPage() {
         } finally {
             setLoading(false);
         }
-    }
+    }, [currentPortfolio]);
 
     useEffect(() => {
         if (!localStorage.getItem('token')) {
@@ -30,11 +37,12 @@ export default function TransactionsPage() {
             return;
         }
 
-        if (token) {
+        if (token && !isPortfolioLoading && currentPortfolio) {
             fetchTx();
         }
-    }, [token, router]);
+    }, [token, router, isPortfolioLoading, currentPortfolio, fetchTx]);
 
+    // ... (handleDelete, handleBulkDelete, toggleSelect, toggleSelectAll, formatDate, formatCurrency remain same)
     const handleDelete = async (id: string) => {
         if (!confirm('Are you sure you want to delete this transaction? This action cannot be undone.')) {
             return;
@@ -113,16 +121,13 @@ export default function TransactionsPage() {
             <header className="border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push('/')}>
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-blue-600 flex items-center justify-center">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-blue-600 flex items-center justify-center cursor-pointer" onClick={() => router.push('/')}>
                                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                 </svg>
                             </div>
-                            <div>
-                                <h1 className="text-xl font-bold text-white">Transactions</h1>
-                                <p className="text-slate-500 text-sm">Trade history</p>
-                            </div>
+                            <PortfolioSelector />
                         </div>
 
                         <div className="flex items-center gap-4">

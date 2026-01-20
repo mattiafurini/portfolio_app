@@ -39,8 +39,65 @@ function getHeaders() {
     return headers;
 }
 
-export async function getPortfolioSummary(assets?: string[]): Promise<PortfolioSummary> {
-    const params = assets?.length ? `?assets=${assets.map(a => encodeURIComponent(a)).join(',')}` : '';
+// Portfolios
+export interface Portfolio {
+    id: string;
+    name: string;
+    userId: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export async function getPortfolios(): Promise<Portfolio[]> {
+    const res = await fetch(`${API_BASE}/portfolio/list`, {
+        headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to fetch portfolios');
+    return res.json();
+}
+
+export async function createPortfolio(name: string): Promise<Portfolio> {
+    const res = await fetch(`${API_BASE}/portfolio`, {
+        method: 'POST',
+        headers: {
+            ...getHeaders(),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('Failed to create portfolio');
+    return res.json();
+}
+
+export async function updatePortfolio(id: string, name: string): Promise<Portfolio> {
+    const res = await fetch(`${API_BASE}/portfolio/${id}`, {
+        method: 'PUT',
+        headers: {
+            ...getHeaders(),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('Failed to update portfolio');
+    return res.json();
+}
+
+export async function deletePortfolio(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/portfolio/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to delete portfolio');
+}
+
+// Data Fetching with Portfolio Scope
+export async function getPortfolioSummary(assets?: string[], portfolioId?: string): Promise<PortfolioSummary> {
+    const queryParts = [];
+    if (assets?.length) queryParts.push(`assets=${assets.map(a => encodeURIComponent(a)).join(',')}`);
+    if (portfolioId) queryParts.push(`portfolioId=${portfolioId}`);
+
+    const params = queryParts.length ? `?${queryParts.join('&')}` : '';
+
     const res = await fetch(`${API_BASE}/portfolio/summary${params}`, {
         headers: getHeaders(),
     });
@@ -51,8 +108,13 @@ export async function getPortfolioSummary(assets?: string[]): Promise<PortfolioS
     return res.json();
 }
 
-export async function getPortfolioHistory(assets?: string[]): Promise<HistoryResponse> {
-    const params = assets?.length ? `?assets=${assets.map(a => encodeURIComponent(a)).join(',')}` : '';
+export async function getPortfolioHistory(assets?: string[], portfolioId?: string): Promise<HistoryResponse> {
+    const queryParts = [];
+    if (assets?.length) queryParts.push(`assets=${assets.map(a => encodeURIComponent(a)).join(',')}`);
+    if (portfolioId) queryParts.push(`portfolioId=${portfolioId}`);
+
+    const params = queryParts.length ? `?${queryParts.join('&')}` : '';
+
     const res = await fetch(`${API_BASE}/portfolio/history${params}`, {
         headers: getHeaders(),
     });
@@ -77,8 +139,13 @@ export interface Transaction {
     };
 }
 
-export async function getTransactions(limit?: number): Promise<Transaction[]> {
-    const params = limit ? `?limit=${limit}` : '';
+export async function getTransactions(limit?: number, portfolioId?: string): Promise<Transaction[]> {
+    const queryParts = [];
+    if (limit) queryParts.push(`limit=${limit}`);
+    if (portfolioId) queryParts.push(`portfolioId=${portfolioId}`);
+
+    const params = queryParts.length ? `?${queryParts.join('&')}` : '';
+
     const res = await fetch(`${API_BASE}/portfolio/transactions${params}`, {
         headers: getHeaders(),
     });
@@ -89,14 +156,16 @@ export async function getTransactions(limit?: number): Promise<Transaction[]> {
     return res.json();
 }
 
-export async function uploadTransactionFile(file: File): Promise<{ success: boolean; message: string }> {
+export async function uploadTransactionFile(file: File, portfolioId?: string): Promise<{ success: boolean; message: string }> {
     const formData = new FormData();
     formData.append('file', file);
+    if (portfolioId) {
+        formData.append('portfolioId', portfolioId);
+    }
 
     const res = await fetch(`${API_BASE}/upload/transactions`, {
         method: 'POST',
         headers: {
-            // FormData automatically sets Content-Type to multipart/form-data
             ...getHeaders(),
         },
         body: formData,

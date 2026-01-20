@@ -8,14 +8,15 @@ datasource db {
 
 // User authentication model
 model User {
-  id               String    @id @default(uuid())
-  email            String    @unique
+  id               String      @id @default(uuid())
+  email            String      @unique
   password         String // Hashed password
   resetToken       String?
   resetTokenExpiry DateTime?
   assets           Asset[]
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  portfolios       Portfolio[]
 }
 
 model Asset {
@@ -31,7 +32,26 @@ model Asset {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Name must be unique per user, not globally
+  // Link to Portfolio
+  portfolioId String?
+  portfolio   Portfolio? @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  // Name must be unique per portfolio (previously per user)
+  // For now, we keep unique per user until migration is done, but eventually we want unique per portfolio
+  // @@unique([name, portfolioId]) 
+  // keeping old constraint for now until backfill is complete
+  @@unique([name, userId])
+}
+
+model Portfolio {
+  id        String   @id @default(uuid())
+  name      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets    Asset[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([name, userId])
 }
 

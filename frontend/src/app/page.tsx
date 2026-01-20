@@ -1,6 +1,7 @@
 
 'use client';
 
+// ... imports
 import { useState, useEffect, useCallback } from 'react';
 import { getPortfolioSummary, getPortfolioHistory, getTransactions, PortfolioSummary, HistoryPoint, Transaction } from '@/lib/api';
 import { MOCK_SUMMARY, MOCK_HISTORY, MOCK_ASSETS_HISTORY, MOCK_TRANSACTIONS } from '@/lib/demoData';
@@ -9,10 +10,13 @@ import PerformanceChart from '@/components/PerformanceChart';
 import HoldingsTable from '@/components/HoldingsTable';
 import FileUpload from '@/components/FileUpload';
 import { useAuth } from '@/context/AuthContext';
+import { usePortfolio } from '@/context/PortfolioContext'; // Added import
+import PortfolioSelector from '@/components/PortfolioSelector'; // Added import
 import { useRouter } from 'next/navigation';
 
 export default function Home() {
   const { user, token, logout, isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { currentPortfolio, isLoading: isPortfolioLoading } = usePortfolio(); // Added usePortfolio
   const router = useRouter();
 
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
@@ -28,17 +32,15 @@ export default function Home() {
   // Demo mode check - only if auth check is done and no token
   const isDemo = !isAuthLoading && !token;
 
-  // Authentication check - REMOVED strictly forcing login
-  // ... (useEffect remains same)
-
   // Fetch data
   const fetchData = useCallback(async () => {
-    if (isAuthLoading) return;
+    // Wait for auth and portfolio loading
+    if (isAuthLoading || (isAuthenticated && isPortfolioLoading)) return;
+
     setLoading(true);
 
     if (isDemo) {
       // Load Mock Data
-      // Artificial delay for realism
       setTimeout(() => {
         setSummary(MOCK_SUMMARY);
         const assetNames = MOCK_SUMMARY.holdings.map(h => h.name);
@@ -51,8 +53,15 @@ export default function Home() {
       return;
     }
 
+    // Authenticated but no portfolio selected yet?
+    if (!currentPortfolio?.id) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      const summaryData = await getPortfolioSummary();
+      const portfolioId = currentPortfolio.id;
+      const summaryData = await getPortfolioSummary(undefined, portfolioId);
       setSummary(summaryData);
 
       // Initialize selected assets to all assets
@@ -60,25 +69,26 @@ export default function Home() {
       setSelectedAssets(assetNames);
 
       // Fetch history for all assets
-      const historyRes = await getPortfolioHistory();
+      const historyRes = await getPortfolioHistory(undefined, portfolioId);
       setHistory(historyRes.portfolio);
       setAssetsHistory(historyRes.assets);
 
       // Fetch last 5 transactions
-      const txData = await getTransactions(5);
+      const txData = await getTransactions(5, portfolioId);
       setRecentTransactions(txData);
     } catch (error) {
       console.error('Failed to fetch data:', error);
       // Ensure summary is null if fetch fails (dont show stale mock data)
       setSummary(null);
     } finally {
-      if (!isDemo) setLoading(false);
+      setLoading(false);
     }
-  }, [token, isDemo, isAuthLoading]);
+  }, [token, isDemo, isAuthLoading, currentPortfolio, isPortfolioLoading, isAuthenticated]); // Added dependencies
 
   // Fetch history when filter changes
   const fetchHistoryForFilter = useCallback(async (assets: string[]) => {
-    if (isDemo) return; // Disable historical filtering in demo for simplicity
+    if (isDemo) return;
+    if (!currentPortfolio?.id) return;
 
     if (assets.length === 0) {
       setHistory([]);
@@ -87,7 +97,7 @@ export default function Home() {
 
     setChartLoading(true);
     try {
-      const historyRes = await getPortfolioHistory(assets);
+      const historyRes = await getPortfolioHistory(assets, currentPortfolio.id);
       setHistory(historyRes.portfolio);
       setAssetsHistory(historyRes.assets);
     } catch (error) {
@@ -95,7 +105,7 @@ export default function Home() {
     } finally {
       setChartLoading(false);
     }
-  }, []);
+  }, [isDemo, currentPortfolio]); // Added dependencies
 
   // Handle Chart View Change (Zoom or Range Filter)
   const handleViewChange = useCallback((start: string, end: string) => {
@@ -125,19 +135,16 @@ export default function Home() {
     fetchHistoryForFilter([]);
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
   const getShortName = (name: string) => {
-    // ... (remains same) ...
+    if (name.length > 20) return name.substring(0, 20) + '...';
+    // Common ETF Simplifications
     if (name.includes('S&P 500')) return 'S&P 500';
     if (name.includes('Overnight')) return 'EUR Overnight';
     if (name.includes('Stoxx Europe')) return 'Stoxx Europe 600';
     if (name.includes('Emerging')) return 'Emerging Markets';
     if (name.includes('MSCI World')) return 'MSCI World';
     if (name.includes('All-World')) return 'All-World';
-    return name.substring(0, 15) + '...';
+    return name;
   };
 
   // Calculate performance for a specific asset over the selected 'range'
@@ -156,11 +163,7 @@ export default function Home() {
       // Find exact points matching the view range
       // Since dates are strings YYYY-MM-DD
       const startPoint = assetHist.find(p => p.date >= viewRange.start);
-      const endPoint = assetHist.find(p => p.date <= viewRange.end) || assetHist[assetHist.length - 1]; // Fallback to last point if max range
-
-      // Actually we want the price AT the end of the range
-      // Find last point <= viewRange.end
-      // We iterate backwards or just find
+      // We iterate backwards to find the last point in range
       let foundEnd = assetHist[assetHist.length - 1];
       for (let i = assetHist.length - 1; i >= 0; i--) {
         if (assetHist[i].date <= viewRange.end) {
@@ -169,9 +172,11 @@ export default function Home() {
         }
       }
 
+      const endPoint = foundEnd;
+
       if (!startPoint) return currentProfitPercent;
       startPrice = startPoint.value;
-      endPrice = foundEnd.value;
+      endPrice = endPoint.value;
     } else {
       // Fallback to old logic if viewRange not yet ready
       // Find start date based on range
@@ -199,6 +204,10 @@ export default function Home() {
     return ((endPrice - startPrice) / startPrice) * 100;
   };
 
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -209,7 +218,12 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* ... */}
+      {/* Background elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[20%] left-[10%] w-[30rem] h-[30rem] bg-emerald-500/5 rounded-full blur-[100px] animate-pulse"></div>
+        <div className="absolute bottom-[20%] right-[10%] w-[25rem] h-[25rem] bg-blue-500/5 rounded-full blur-[80px] animate-pulse" style={{ animationDelay: '2s' }}></div>
+      </div>
+
       <div className="relative z-10">
         <header className="border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -220,10 +234,22 @@ export default function Home() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
                 </div>
-                <div>
-                  <h1 className="text-xl font-bold text-white">Portfolio</h1>
-                  <p className="text-xs text-slate-500 font-medium">ETF TRACKER</p>
-                </div>
+                {isAuthenticated ? (
+                  <PortfolioSelector />
+                ) : (
+                  <div>
+                    <h1 className="text-xl font-bold text-white">Portfolio</h1>
+                    <p className="text-xs text-slate-500 font-medium">ETF TRACKER</p>
+                  </div>
+                )}
+                {isAuthenticated && (
+                  <button
+                    onClick={() => router.push('/transactions')}
+                    className="ml-6 px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 hover:text-white text-sm font-medium rounded-lg transition-all border border-slate-700/50"
+                  >
+                    Transactions
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-4">
                 {isAuthenticated && (
@@ -283,7 +309,6 @@ export default function Home() {
                       <span className="text-xs text-slate-500 mr-2">Filter:</span>
                       {summary.holdings.map((holding) => {
                         const isSelected = selectedAssets.includes(holding.name);
-                        // Calculate percentage based on selected range if available, else total P/L
                         const profitPercent = getAssetPerformance(holding.name, holding.profitLossPercent ?? 0);
 
                         return (
@@ -334,7 +359,7 @@ export default function Home() {
 
             {/* Right Column */}
             <div className="space-y-6">
-              {!isDemo && <FileUpload onUploadSuccess={fetchData} />}
+              {!isDemo && <FileUpload onUploadSuccess={fetchData} portfolioId={currentPortfolio?.id} />}
 
               {isDemo && (
                 <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50">
@@ -386,6 +411,8 @@ export default function Home() {
 
               {/* Quick Stats */}
               <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700/50 shadow-xl">
+                {/* ... Stats content ... */}
+                {/* Reusing existing stats render logic */}
                 <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                   <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
