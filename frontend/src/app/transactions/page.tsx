@@ -1,16 +1,15 @@
 'use client';
 
-// ... imports
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { usePortfolio } from '@/context/PortfolioContext'; // Added import
-import PortfolioSelector from '@/components/PortfolioSelector'; // Added import
+import { usePortfolio } from '@/context/PortfolioContext';
 import { getTransactions, deleteTransaction, deleteTransactions, Transaction } from '@/lib/api';
+import Header from '@/components/Header';
 
 export default function TransactionsPage() {
-    const { token, logout, user } = useAuth();
-    const { currentPortfolio, isLoading: isPortfolioLoading } = usePortfolio(); // Added usePortfolio
+    const { token } = useAuth();
+    const { currentPortfolio, isLoading: isPortfolioLoading } = usePortfolio();
     const router = useRouter();
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
@@ -42,7 +41,6 @@ export default function TransactionsPage() {
         }
     }, [token, router, isPortfolioLoading, currentPortfolio, fetchTx]);
 
-    // ... (handleDelete, handleBulkDelete, toggleSelect, toggleSelectAll, formatDate, formatCurrency remain same)
     const handleDelete = async (id: string) => {
         if (!confirm('Are you sure you want to delete this transaction? This action cannot be undone.')) {
             return;
@@ -117,37 +115,7 @@ export default function TransactionsPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-            {/* Header */}
-            <header className="border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-blue-600 flex items-center justify-center cursor-pointer" onClick={() => router.push('/')}>
-                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                </svg>
-                            </div>
-                            <PortfolioSelector />
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                            <span className="text-sm text-gray-400 hidden sm:block">{user?.email}</span>
-                            <button
-                                onClick={() => router.push('/')}
-                                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors text-sm"
-                            >
-                                ← Dashboard
-                            </button>
-                            <button
-                                onClick={logout}
-                                className="px-3 py-1.5 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/10 transition-colors"
-                            >
-                                Logout
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </header>
+            <Header />
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <div className="bg-slate-900/50 rounded-2xl border border-slate-800/50 overflow-hidden shadow-xl">

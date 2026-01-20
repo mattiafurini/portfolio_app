@@ -1,7 +1,5 @@
-
 'use client';
 
-// ... imports
 import { useState, useEffect, useCallback } from 'react';
 import { getPortfolioSummary, getPortfolioHistory, getTransactions, PortfolioSummary, HistoryPoint, Transaction } from '@/lib/api';
 import { MOCK_SUMMARY, MOCK_HISTORY, MOCK_ASSETS_HISTORY, MOCK_TRANSACTIONS } from '@/lib/demoData';
@@ -10,13 +8,13 @@ import PerformanceChart from '@/components/PerformanceChart';
 import HoldingsTable from '@/components/HoldingsTable';
 import FileUpload from '@/components/FileUpload';
 import { useAuth } from '@/context/AuthContext';
-import { usePortfolio } from '@/context/PortfolioContext'; // Added import
-import PortfolioSelector from '@/components/PortfolioSelector'; // Added import
+import { usePortfolio } from '@/context/PortfolioContext';
 import { useRouter } from 'next/navigation';
+import Header from '@/components/Header';
 
 export default function Home() {
   const { user, token, logout, isAuthenticated, isLoading: isAuthLoading } = useAuth();
-  const { currentPortfolio, isLoading: isPortfolioLoading } = usePortfolio(); // Added usePortfolio
+  const { currentPortfolio, isLoading: isPortfolioLoading } = usePortfolio();
   const router = useRouter();
 
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
@@ -225,63 +223,7 @@ export default function Home() {
       </div>
 
       <div className="relative z-10">
-        <header className="border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-blue-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                {isAuthenticated ? (
-                  <PortfolioSelector />
-                ) : (
-                  <div>
-                    <h1 className="text-xl font-bold text-white">Portfolio</h1>
-                    <p className="text-xs text-slate-500 font-medium">ETF TRACKER</p>
-                  </div>
-                )}
-                {isAuthenticated && (
-                  <button
-                    onClick={() => router.push('/transactions')}
-                    className="ml-6 px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 hover:text-white text-sm font-medium rounded-lg transition-all border border-slate-700/50"
-                  >
-                    Transactions
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-4">
-                {isAuthenticated && (
-                  <span className="text-sm text-gray-400 hidden sm:block">{user?.email}</span>
-                )}
-                {isAuthenticated ? (
-                  <button
-                    onClick={logout}
-                    className="px-3 py-1.5 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/10 transition-colors"
-                  >
-                    Logout
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => router.push('/login')}
-                      className="text-slate-300 hover:text-white text-sm font-medium transition-colors"
-                    >
-                      Login
-                    </button>
-                    <button
-                      onClick={() => router.push('/register')}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-600/20"
-                    >
-                      Sign Up
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
+        <Header />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">

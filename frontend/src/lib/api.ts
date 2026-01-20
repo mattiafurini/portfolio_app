@@ -196,3 +196,74 @@ export async function deleteTransactions(ids: string[]): Promise<void> {
 
     if (!res.ok) throw new Error('Failed to delete transactions');
 }
+
+// Backtesting
+export interface BacktestRequest {
+    ticker: string;
+    initialInvestment: number;
+    monthlyContribution: number;
+    startDate: string; // YYYY-MM-DD
+    endDate?: string;
+    currency?: string;
+}
+
+export interface BacktestResult {
+    ticker: string;
+    period: { start: string; end: string; years: number };
+    summary: {
+        totalInvested: number;
+        finalValue: number;
+        totalReturn: number;
+        totalReturnPercent: number;
+        cagr: number;
+    };
+    chartData: {
+        date: string;
+        invested: number;
+        value: number;
+        price: number;
+    }[];
+}
+
+export async function runBacktest(request: BacktestRequest): Promise<BacktestResult> {
+    const res = await fetch(`${API_BASE}/backtest/run`, {
+        method: 'POST',
+        headers: {
+            ...getHeaders(),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: 'Failed to run backtest' }));
+        throw new Error(err.message || 'Failed to run backtest');
+    }
+    return res.json();
+}
+
+export interface SearchResult {
+    symbol: string;
+    longname?: string;
+    shortname?: string;
+    score: number;
+    typeDisp?: string;
+    exchange?: string;
+}
+
+export async function searchAssets(query: string): Promise<SearchResult[]> {
+    if (!query) return [];
+
+    // Check if query is short to avoid spamming the backend
+    if (query.length < 2) return [];
+
+    const res = await fetch(`${API_BASE}/backtest/search?q=${encodeURIComponent(query)}`, {
+        headers: getHeaders(),
+    });
+
+    if (!res.ok) {
+        // Silently fail or return empty on search errors
+        return [];
+    }
+    return res.json();
+}

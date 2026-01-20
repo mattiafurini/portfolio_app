@@ -6,6 +6,8 @@ import { AssetsModule } from './assets/assets.module';
 import { PricesModule } from './prices/prices.module';
 import { AuthModule } from './auth/auth.module';
 
+import { BacktestModule } from './backtest/backtest.module';
+
 @Module({
   imports: [
     PrismaModule,
@@ -14,6 +16,7 @@ import { AuthModule } from './auth/auth.module';
     AssetsModule,
     PricesModule,
     AuthModule,
+    BacktestModule,
   ],
 })
 export class AppModule { }
