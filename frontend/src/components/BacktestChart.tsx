@@ -14,19 +14,25 @@ interface BacktestChartProps {
 export default function BacktestChart({ data }: BacktestChartProps) {
     if (!data || data.length === 0) return null;
 
+    // Convert date strings to timestamps for time-scale axis
+    const chartData = data.map(d => ({
+        ...d,
+        dateNum: new Date(d.date).getTime()
+    }));
+
     const formatCurrency = (val: number) => {
         return `€${val.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
     };
 
-    const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr);
+    const formatDate = (dateNum: number) => {
+        const date = new Date(dateNum);
         return date.toLocaleDateString('it-IT', { month: 'short', year: '2-digit' });
     };
 
     return (
         <div className="w-full h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data}>
+                <LineChart data={chartData}>
                     <defs>
                         <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
@@ -35,7 +41,10 @@ export default function BacktestChart({ data }: BacktestChartProps) {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} vertical={false} />
                     <XAxis
-                        dataKey="date"
+                        dataKey="dateNum"
+                        type="number"
+                        domain={['dataMin', 'dataMax']}
+                        scale="time"
                         stroke="#94a3b8"
                         tickFormatter={formatDate}
                         minTickGap={50}

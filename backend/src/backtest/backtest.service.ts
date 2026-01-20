@@ -78,8 +78,9 @@ export class BacktestService {
             totalInvested += initialInvestment;
         }
 
-        // Setup next monthly trigger
-        let nextMonthTarget = new Date(start);
+        // Setup next monthly trigger relative to the ACTUAL start date of data
+        // This prevents "catching up" missed months if the asset didn't exist yet
+        let nextMonthTarget = new Date(sortedQuotes[0].date);
         nextMonthTarget.setMonth(nextMonthTarget.getMonth() + 1);
 
         for (const quote of sortedQuotes) {
@@ -110,8 +111,8 @@ export class BacktestService {
         const totalReturn = finalValue - totalInvested;
         const totalReturnPercent = (totalInvested > 0) ? (totalReturn / totalInvested) * 100 : 0;
 
-        // CAGR
-        const startTimestamp = new Date(start).getTime();
+        // CAGR - Use actual data start, not requested start
+        const startTimestamp = new Date(sortedQuotes[0].date).getTime();
         const endTimestamp = new Date(sortedQuotes[sortedQuotes.length - 1].date).getTime();
         const years = (endTimestamp - startTimestamp) / (1000 * 60 * 60 * 24 * 365.25);
 
@@ -170,6 +171,25 @@ export class BacktestService {
         } catch (error) {
             this.logger.error(`Search failed for ${query}: ${error}`);
             return [];
+        }
+    }
+
+    async getMetadata(ticker: string) {
+        try {
+            const quote = await yahooFinance.quote(ticker) as any;
+            if (!quote) {
+                return { ticker, firstTradeDate: null };
+            }
+            return {
+                ticker: quote.symbol,
+                firstTradeDate: quote.firstTradeDateMilliseconds ? new Date(quote.firstTradeDateMilliseconds).toISOString() : null,
+                currency: quote.currency,
+                exchange: quote.exchange,
+            };
+        } catch (error) {
+            this.logger.error(`Metadata fetch failed for ${ticker}: ${error}`);
+            // Return empty or defaults instead of crash
+            return { ticker, firstTradeDate: null };
         }
     }
 }

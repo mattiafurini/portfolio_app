@@ -14,8 +14,12 @@ export class BacktestController {
     }
 
     @Get('search')
-    async search(@Query('q') query: string) {
-        if (!query) return [];
+    search(@Query('q') query: string) {
         return this.backtestService.search(query);
+    }
+
+    @Get('metadata')
+    getMetadata(@Query('ticker') ticker: string) {
+        return this.backtestService.getMetadata(ticker);
     }
 }

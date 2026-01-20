@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import BacktestChart from '@/components/BacktestChart';
 import TickerSearch from '@/components/TickerSearch';
-import { runBacktest, BacktestRequest, BacktestResult } from '@/lib/api';
+import { runBacktest, getBacktestMetadata, BacktestRequest, BacktestResult } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -22,6 +22,33 @@ export default function BacktestPage() {
     const [result, setResult] = useState<BacktestResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [minDate, setMinDate] = useState<string>('');
+
+    // Fetch metadata when ticker changes to set constraints
+    useEffect(() => {
+        const fetchMeta = async () => {
+            if (!form.ticker) return;
+            try {
+                const meta = await getBacktestMetadata(form.ticker);
+                if (meta && meta.firstTradeDate) {
+                    const inceptionDate = meta.firstTradeDate.split('T')[0];
+                    setMinDate(inceptionDate);
+
+                    // Auto-adjust if current start date is before inception
+                    if (form.startDate < inceptionDate) {
+                        setForm(prev => ({ ...prev, startDate: inceptionDate }));
+                    }
+                } else {
+                    setMinDate('');
+                }
+            } catch (err) {
+                console.error("Failed to fetch metadata", err);
+            }
+        };
+
+        const timer = setTimeout(fetchMeta, 600);
+        return () => clearTimeout(timer);
+    }, [form.ticker, form.startDate]); // Include startDate to validly access it, safe due to condition
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -97,10 +124,14 @@ export default function BacktestPage() {
                                     <input
                                         type="date"
                                         required
+                                        min={minDate}
                                         className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                                         value={form.startDate}
                                         onChange={e => setForm({ ...form, startDate: e.target.value })}
                                     />
+                                    {minDate && (
+                                        <p className="text-xs text-slate-500 mt-1">Available from: {minDate}</p>
+                                    )}
                                 </div>
 
                                 <button

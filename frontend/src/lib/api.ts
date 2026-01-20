@@ -267,3 +267,11 @@ export async function searchAssets(query: string): Promise<SearchResult[]> {
     }
     return res.json();
 }
+
+export async function getBacktestMetadata(ticker: string) {
+    const res = await fetch(`${API_BASE}/backtest/metadata?ticker=${encodeURIComponent(ticker)}`, {
+        headers: getHeaders(),
+    });
+    if (!res.ok) return null;
+    return res.json();
+}
