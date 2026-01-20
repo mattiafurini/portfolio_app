@@ -41,9 +41,8 @@ export default function HoldingsTable({ holdings, loading }: HoldingsTableProps)
                 <table className="w-full">
                     <thead>
                         <tr className="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700/50">
-                            <th className="text-left py-3 px-2 w-[30%]">Asset</th>
+                            <th className="text-left py-3 px-2 w-[45%]">Asset</th>
                             <th className="text-right py-3 px-2">Qty</th>
-                            <th className="text-right py-3 px-2">Avg Price</th>
                             <th className="text-right py-3 px-2">Initial Cost</th>
                             <th className="text-right py-3 px-2">Real Time</th>
                             <th className="text-right py-3 px-2">P/L %</th>
@@ -57,14 +56,11 @@ export default function HoldingsTable({ holdings, loading }: HoldingsTableProps)
 
                             return (
                                 <tr key={holding.id} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
-                                    <td className="py-3 px-2 max-w-[200px]">
+                                    <td className="py-3 px-2 max-w-[300px]">
                                         <span className="text-white font-medium text-sm truncate block" title={holding.name}>{holding.name}</span>
                                     </td>
                                     <td className="py-3 px-2 text-right text-slate-300 text-sm">
                                         {holding.quantity.toLocaleString('it-IT')}
-                                    </td>
-                                    <td className="py-3 px-2 text-right text-slate-300 text-sm">
-                                        €{holding.avgPrice.toFixed(2)}
                                     </td>
                                     <td className="py-3 px-2 text-right text-slate-300 text-sm">
                                         €{holding.totalCost.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
