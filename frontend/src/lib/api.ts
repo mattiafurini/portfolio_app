@@ -223,6 +223,11 @@ export interface BacktestResult {
         value: number;
         price: number;
     }[];
+    yearlyReturns: {
+        year: number;
+        returnPercent: number;
+        value: number;
+    }[];
 }
 
 export async function runBacktest(request: BacktestRequest): Promise<BacktestResult> {

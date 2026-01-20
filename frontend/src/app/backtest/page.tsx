@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import BacktestChart from '@/components/BacktestChart';
+import YearlyChart from '@/components/YearlyChart';
 import TickerSearch from '@/components/TickerSearch';
 import { runBacktest, getBacktestMetadata, BacktestRequest, BacktestResult } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -167,25 +168,31 @@ export default function BacktestPage() {
                         {result && (
                             <>
                                 {/* Stats Cards */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800/50">
-                                        <div className="text-slate-400 text-sm mb-1">Total Invested</div>
-                                        <div className="text-2xl font-bold text-white">€{result.summary.totalInvested.toLocaleString('it-IT')}</div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
+                                        <div className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Invested</div>
+                                        <div className="text-lg font-bold text-white">€{result.summary.totalInvested.toLocaleString('it-IT')}</div>
                                     </div>
-                                    <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800/50">
-                                        <div className="text-slate-400 text-sm mb-1">Final Value</div>
-                                        <div className="text-2xl font-bold text-white">€{result.summary.finalValue.toLocaleString('it-IT')}</div>
+                                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
+                                        <div className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Final Value</div>
+                                        <div className="text-lg font-bold text-white">€{result.summary.finalValue.toLocaleString('it-IT')}</div>
                                     </div>
-                                    <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800/50">
-                                        <div className="text-slate-400 text-sm mb-1">Total Return</div>
-                                        <div className={`text-2xl font-bold ${result.summary.totalReturn >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
+                                        <div className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Total Return</div>
+                                        <div className={`text-lg font-bold ${result.summary.totalReturn >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                             {result.summary.totalReturn >= 0 ? '+' : ''}€{result.summary.totalReturn.toLocaleString('it-IT')}
                                         </div>
                                     </div>
-                                    <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800/50">
-                                        <div className="text-slate-400 text-sm mb-1">Return %</div>
-                                        <div className={`text-2xl font-bold ${result.summary.totalReturnPercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
+                                        <div className="text-slate-500 text-xs mb-1 uppercase tracking-wider">Return %</div>
+                                        <div className={`text-lg font-bold ${result.summary.totalReturnPercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                             {result.summary.totalReturnPercent >= 0 ? '+' : ''}{result.summary.totalReturnPercent.toFixed(2)}%
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
+                                        <div className="text-slate-500 text-xs mb-1 uppercase tracking-wider">CAGR</div>
+                                        <div className={`text-lg font-bold ${result.summary.cagr >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            {result.summary.cagr >= 0 ? '+' : ''}{result.summary.cagr.toFixed(2)}%
                                         </div>
                                     </div>
                                 </div>
@@ -195,6 +202,14 @@ export default function BacktestPage() {
                                     <h3 className="text-lg font-semibold text-white mb-6">Performance Growth</h3>
                                     <BacktestChart data={result.chartData} />
                                 </div>
+
+                                {/* Yearly Returns Chart */}
+                                {result.yearlyReturns && (
+                                    <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800/50 shadow-xl">
+                                        <h3 className="text-lg font-semibold text-white mb-6">Yearly Performance</h3>
+                                        <YearlyChart data={result.yearlyReturns} />
+                                    </div>
+                                )}
 
                                 {/* Details */}
                                 <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800/50">

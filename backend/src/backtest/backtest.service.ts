@@ -28,6 +28,11 @@ export interface BacktestResult {
         value: number;
         price: number;
     }[];
+    yearlyReturns: {
+        year: number;
+        returnPercent: number;
+        value: number;
+    }[];
 }
 
 @Injectable()
@@ -116,11 +121,79 @@ export class BacktestService {
         const endTimestamp = new Date(sortedQuotes[sortedQuotes.length - 1].date).getTime();
         const years = (endTimestamp - startTimestamp) / (1000 * 60 * 60 * 24 * 365.25);
 
+        // CAGR / Annual Return with XIRR for DCA support
         let cagr = 0;
-        if (totalInvested > 0 && finalValue > 0 && years > 0) {
-            if (monthlyContribution === 0) {
-                cagr = (Math.pow(finalValue / totalInvested, 1 / years) - 1) * 100;
+        if (totalInvested > 0 && finalValue > 0 && chartData.length > 0) {
+            // Construct Cash Flows
+            // 1. Initial Investment at start date
+            const cashFlows: { amount: number; date: Date }[] = [];
+
+            if (initialInvestment > 0) {
+                cashFlows.push({ amount: -initialInvestment, date: new Date(chartData[0].date) });
             }
+
+            // 2. Find monthly contribution dates
+            // We can infer them from when 'invested' amount increases
+            let previousInvested = initialInvestment;
+            for (let i = 1; i < chartData.length; i++) {
+                const diff = chartData[i].invested - previousInvested;
+                if (diff > 0.01) { // Floating point tolerance
+                    cashFlows.push({ amount: -diff, date: new Date(chartData[i].date) });
+                    previousInvested = chartData[i].invested;
+                }
+            }
+
+            // 3. Final Value as positive cash flow
+            cashFlows.push({ amount: finalValue, date: new Date(chartData[chartData.length - 1].date) });
+
+            cagr = this.calculateXIRR(cashFlows) * 100;
+        }
+
+        // Calculate Yearly Returns using Simple Dietz method approximation for DCA
+        const yearlyReturns: { year: number; returnPercent: number; value: number }[] = [];
+        const yearsList = [...new Set(chartData.map(d => parseInt(d.date.split('-')[0])))];
+
+        for (const year of yearsList) {
+            const yearData = chartData.filter(d => d.date.startsWith(year.toString()));
+            if (yearData.length === 0) continue;
+
+            const start = yearData[0];
+            const end = yearData[yearData.length - 1];
+
+            // Value at start of year (or strictly previous year end if available, but simplest is first data point of year)
+            // For DCA: Return = (EndValue - StartValue - Contributions) / (StartValue + 0.5 * Contributions)
+
+            // Find previous year's last data point for precise opening value
+            const prevYearData = chartData.filter(d => d.date.startsWith((year - 1).toString()));
+            const prevEndValue = prevYearData.length > 0 ? prevYearData[prevYearData.length - 1].value : 0;
+            const prevInvested = prevYearData.length > 0 ? prevYearData[prevYearData.length - 1].invested : 0;
+
+            // Start Value is previous year end or 0 if first year
+            const startValue = prevYearData.length > 0 ? prevEndValue : start.invested; // If first year, start base is initial investment (approx)
+            // Actually, if first year, "startValue" isn't 0, it's the initial lump sum. 
+            // Let's use: Gain = (EndValue - EndInvested) - (PrevEndValue - PrevEndInvested) ?? 
+            // Simpler: (EndValue - StartValue - NetFlow) / (StartValue + NetFlow/2)
+
+            // Contributions made THIS year = (EndInvested - PrevEndInvested)
+            // If first year: EndInvested - 0 (if lump sum is considered "contribution" of that year)
+            const investedAtStart = prevYearData.length > 0 ? prevEndValue : 0; // Asset value at start
+            const totalInvestedAtStart = prevYearData.length > 0 ? prevInvested : 0;
+
+            const contributions = end.invested - totalInvestedAtStart;
+
+            const gain = end.value - investedAtStart - contributions;
+            const denominator = investedAtStart + (contributions / 2); // Simple Dietz
+
+            let returnPercent = 0;
+            if (denominator > 0) {
+                returnPercent = (gain / denominator) * 100;
+            }
+
+            yearlyReturns.push({
+                year,
+                returnPercent: parseFloat(returnPercent.toFixed(2)),
+                value: parseFloat(end.value.toFixed(2))
+            });
         }
 
         return {
@@ -137,6 +210,7 @@ export class BacktestService {
                 totalReturnPercent: parseFloat(totalReturnPercent.toFixed(2)),
                 cagr: parseFloat(cagr.toFixed(2))
             },
+            yearlyReturns,
             chartData
         };
     }
@@ -172,6 +246,44 @@ export class BacktestService {
             this.logger.error(`Search failed for ${query}: ${error}`);
             return [];
         }
+    }
+
+    private calculateXIRR(cashFlows: { amount: number; date: Date }[], guess = 0.1): number {
+        const xnpv = (rate: number, cashFlows: { amount: number; date: Date }[]) => {
+            let sum = 0;
+            const t0 = cashFlows[0].date.getTime();
+            for (const flow of cashFlows) {
+                const dt = (flow.date.getTime() - t0) / (1000 * 3600 * 24 * 365.25);
+                sum += flow.amount / Math.pow(1 + rate, dt);
+            }
+            return sum;
+        };
+
+        const dxnpv = (rate: number, cashFlows: { amount: number; date: Date }[]) => {
+            let sum = 0;
+            const t0 = cashFlows[0].date.getTime();
+            for (const flow of cashFlows) {
+                const dt = (flow.date.getTime() - t0) / (1000 * 3600 * 24 * 365.25);
+                sum -= (dt * flow.amount) / Math.pow(1 + rate, dt + 1);
+            }
+            return sum;
+        };
+
+        let rate = guess;
+        const maxIter = 50;
+        const tol = 1e-6;
+
+        for (let i = 0; i < maxIter; i++) {
+            const fValue = xnpv(rate, cashFlows);
+            const dfValue = dxnpv(rate, cashFlows);
+
+            if (Math.abs(dfValue) < tol) break; // Start of zero-derivative
+
+            const newRate = rate - fValue / dfValue;
+            if (Math.abs(newRate - rate) < tol) return newRate;
+            rate = newRate;
+        }
+        return rate;
     }
 
     async getMetadata(ticker: string) {
