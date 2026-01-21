@@ -6,20 +6,12 @@ const yahooFinance = new YahooFinance();
 
 // Mapping from ISIN to Yahoo Finance tickers (PRIORITY)
 const ISIN_TICKER_MAP: Record<string, string> = {
-    'LU0290358497': 'XEON.DE', // Xtrackers II EUR Overnight
-    'IE000XZSV718': 'SPYL.DE', // SPDR S&P 500
-    'LU2300295123': 'PRAM.DE', // Amundi Prime Emerging Markets
-    'DE000A2QP4B6': 'EXIE.DE', // iShares Stoxx Europe 600
+    // Empty to force dynamic search
 };
 
 // Fallback mapping from Fineco ETF names (if ISIN is missing)
 const ETF_TICKER_MAP: Record<string, string> = {
-    'Xtrackers II EUR Overnight Rate Swap UCITS ETF 1C': 'XEON.DE',
-    'Amundi IS Prime Emerging Markets UCITS ETF DR': 'PRAM.DE',
-    'SPDR S&P 500 UCITS ETF (Acc)': 'SPYL.DE',
-    'iShares Stoxx Europe 600 UCITS ETF (DE) Acc': 'EXIE.DE',
-    'iShares Core MSCI World UCITS ETF USD (Acc)': 'EUNL.DE',
-    'Vanguard FTSE All-World UCITS ETF (USD) Accumulating': 'VWCE.DE',
+    // Empty to force dynamic search
 };
 
 @Injectable()
@@ -29,20 +21,123 @@ export class PricesService {
     constructor(private prisma: PrismaService) { }
 
     /**
-     * Resolve ticker from ISIN or Name
+     * Cache for dynamically resolved tickers to avoid repeated API calls
      */
-    private getTicker(assetName: string, isin?: string | null): string | null {
+    private tickerCache: Map<string, string> = new Map();
+
+    /**
+     * Clean asset name for better search results
+     * Removes "Acc", "Dist", currency, "IS", "DR", etc.
+     */
+    private cleanAssetName(name: string): string {
+        return name
+            .replace(/\b(Acc|Accumulating|Dist|Distributing|Income|Class|All Cap|IS|DR)\b/gi, '')
+            .replace(/\(.*\)/g, '') // remove parens like (USD)
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    /**
+     * Resolve ticker from ISIN or Name, with fallback to dynamic search
+     */
+    private async getTicker(assetName: string, isin?: string | null): Promise<string | null> {
+        // 1. Check static ISIN map (Priority)
         if (isin && ISIN_TICKER_MAP[isin]) {
             return ISIN_TICKER_MAP[isin];
         }
-        return ETF_TICKER_MAP[assetName] || null;
+
+        // 2. Check static Name map
+        if (ETF_TICKER_MAP[assetName]) {
+            return ETF_TICKER_MAP[assetName];
+        }
+
+        // 3. Check in-memory cache
+        const cacheKey = isin ? `${isin}|${assetName}` : assetName;
+        if (this.tickerCache.has(cacheKey)) {
+            return this.tickerCache.get(cacheKey)!;
+        }
+
+        // 4. Dynamic Search strategies
+        const searchAttempts: string[] = [];
+
+        // Attempt A: ISIN (Highest precision)
+        if (isin) searchAttempts.push(isin);
+
+        // Attempt B: Full Name (High precision but often fails if too long)
+        searchAttempts.push(assetName);
+
+        // Prepare variations of cleaned name
+        let baseCleaned = this.cleanAssetName(assetName);
+
+        // Attempt C: Cleaned name KEEPING "UCITS ETF" (Needed for iShares Stoxx 600 to find Acc)
+        // Ensure we don't duplicate if baseCleaned already lacks UCITS ETF
+        if (baseCleaned !== assetName) {
+            searchAttempts.push(baseCleaned);
+        }
+
+        // Attempt D: Cleaned name REMOVING "UCITS ETF" (Needed for Vanguard Asia Pac to find anything)
+        const genericCleaned = baseCleaned.replace(/\b(UCITS|ETF)\b/gi, '').replace(/\s+/g, ' ').trim();
+        if (genericCleaned !== baseCleaned && genericCleaned.length > 3) {
+            searchAttempts.push(genericCleaned);
+        }
+
+        for (const term of searchAttempts) {
+            try {
+                this.logger.log(`Searching Yahoo Finance for ticker: ${term}`);
+                const result = await yahooFinance.search(term);
+
+                if (result.quotes && result.quotes.length > 0) {
+                    let candidates = result.quotes.filter(q => q.symbol);
+
+                    // Filter: If original name implies Accumulating, prefer Accumulating results
+                    const isAcc = assetName.match(/\b(Acc|Accumulating)\b/i);
+                    const isDist = assetName.match(/\b(Dist|Distributing|Income)\b/i);
+
+                    if (isAcc) {
+                        const accCandidates = candidates.filter(q =>
+                            String(q.longname || q.shortname || '').match(/\b(Acc|Accumulating)\b/i) &&
+                            !String(q.longname || q.shortname || '').match(/\b(Dist|Distributing|Income)\b/i)
+                        );
+                        if (accCandidates.length > 0) candidates = accCandidates;
+                    } else if (isDist) {
+                        const distCandidates = candidates.filter(q =>
+                            String(q.longname || q.shortname || '').match(/\b(Dist|Distributing|Income)\b/i)
+                        );
+                        if (distCandidates.length > 0) candidates = distCandidates;
+                    }
+
+                    // Sort: Prefer XETRA (.DE) or MILAN (.MI) or generic high score
+                    candidates.sort((a, b) => {
+                        const getScore = (sym: string) => {
+                            if (sym.endsWith('.DE')) return 3;
+                            if (sym.endsWith('.MI')) return 2;
+                            if (sym.endsWith('.PA') || sym.endsWith('.AS')) return 1;
+                            return 0;
+                        };
+                        return getScore((b.symbol as string)) - getScore((a.symbol as string));
+                    });
+
+                    const bestMatch = candidates[0];
+                    if (bestMatch && bestMatch.symbol) {
+                        const symbol = bestMatch.symbol as string;
+                        this.logger.log(`Found ticker ${symbol} for ${term} (Original: ${assetName})`);
+                        this.tickerCache.set(cacheKey, symbol);
+                        return symbol;
+                    }
+                }
+            } catch (err) {
+                this.logger.warn(`Search failed for term '${term}': ${err}`);
+            }
+        }
+
+        return null;
     }
 
     /**
      * Get current price for an ETF by its Fineco name (and optional ISIN)
      */
     async getCurrentPrice(assetName: string, isin?: string | null): Promise<number | null> {
-        const ticker = this.getTicker(assetName, isin);
+        const ticker = await this.getTicker(assetName, isin);
 
         if (!ticker) {
             this.logger.warn(`No ticker mapping for: ${assetName} (ISIN: ${isin || 'N/A'})`);
@@ -203,7 +298,7 @@ export class PricesService {
         endDate: Date,
         isin?: string | null,
     ): Promise<Record<string, number>> {
-        const ticker = this.getTicker(assetName, isin);
+        const ticker = await this.getTicker(assetName, isin);
         if (!ticker) {
             this.logger.warn(`No ticker mapping for: ${assetName} (ISIN: ${isin})`);
             return {};
