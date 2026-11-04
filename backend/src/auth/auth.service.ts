@@ -71,7 +71,8 @@ export class AuthService {
             },
         });
 
-        const resetLink = `http://YOUR_SERVER_IP/reset-password?token=${token}`;
+        const appUrl = process.env.APP_URL || 'http://localhost:3000';
+        const resetLink = `${appUrl}/reset-password?token=${token}`;
 
         await transporter.sendMail({
             from: '"Portfolio App" <' + process.env.GMAIL_USER + '>',
